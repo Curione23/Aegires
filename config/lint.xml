@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<lint>
+  <!-- Unused will be removed on release -->
+  <issue id="UnusedResources" severity="ignore" />
+
+  <!-- Manual upgrades -->
+  <issue id="GradleDependency" severity="ignore" />
+  <issue id="NewerVersionAvailable" severity="ignore" />
+
+  <!-- Ignore indexing through Google APIs -->
+  <issue id="GoogleAppIndexingApiWarning" severity="ignore" />
+
+  <!-- AGP 3.0 issues -->
+  <issue id="MissingRegistered" severity="ignore" />
+
+  <issue id="UnknownNullness" severity="ignore" />
+  <issue id="ConvertToWebp" severity="ignore" />
+</lint>
