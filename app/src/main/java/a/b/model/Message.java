@@ -8,10 +8,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import a.b.util.Crypto;
+
 public class Message {
   public String id;
   public Author author;
   public String content;
+  public boolean encrypted;
   public String memberNick;
   public long timestamp;
 
@@ -32,6 +35,7 @@ public class Message {
     Message msg = new Message();
     msg.id = m.getString("id");
     msg.content = m.has("content") ? m.optString("content", "") : null;
+    msg.encrypted = Crypto.looksEncrypted(msg.content);
     msg.timestamp = extractTimestamp(msg.id);
 
     JSONObject authorJson = m.getJSONObject("author");

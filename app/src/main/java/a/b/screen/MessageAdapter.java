@@ -200,7 +200,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         if (!show) return;
         h.name.setText(displayName(msg));
         h.name.setTextColor(getAuthorColor(msg));
-        h.time.setText(TimeUtils.relativeTime(msg.timestamp));
+        
+        String timeStr = TimeUtils.relativeTime(msg.timestamp);
+        h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
+
         String uid = msg.author != null ? msg.author.id : null;
         h.avatar.setImageDrawable(null);
         if (activity != null && imageLoader != null && !BuildConfig.SKIP_IMAGES && msg.author != null && isReal(msg.author.avatar)) {
@@ -1051,28 +1054,34 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             boolean showHeader = pos == 0 || !sameGroup(displayList.get(pos - 1), msg);
             bindHeader(this, msg, showHeader);
             CharSequence text;
-            if (msg.id == null) {
-                text = render(msg.content, msg);
+
+            if (msg.encrypted && (activity == null || activity.e2eeKey == null)) {
+                text = "\uD83D\uDD12 Encrypted message (set key in settings to view)";
             } else {
-                text = parsedContentCache.get(msg.id);
-                if (text == null) {
+                if (msg.id == null) {
                     text = render(msg.content, msg);
-                    parsedContentCache.put(msg.id, text);
+                } else {
+                    text = parsedContentCache.get(msg.id);
+                    if (text == null) {
+                        text = render(msg.content, msg);
+                        parsedContentCache.put(msg.id, text);
+                    }
                 }
             }
             content.setText(text);
             content.setVisibility(text.length() > 0 ? View.VISIBLE : View.GONE);
+            
             boolean isReply = msg.replyToMessageId != null;
             reply.setVisibility(isReply ? View.VISIBLE : View.GONE);
             if (isReply) reply.setText(replyPreview(msg));
-            
+
             attachments.removeAllViews();
             if (msg.attachments != null) {
                 for (Message.Attachment a : msg.attachments) {
                     if (a != null) add(attachments, attachmentView(a, msg, root));
                 }
             }
-            
+
             embeds.removeAllViews();
             if (msg.embeds != null) {
                 for (Embed e : msg.embeds) {

@@ -524,7 +524,7 @@ public class MessageListScreen implements Screen {
                 pendingImageHeight = 0;
             };
             String payloadText = text;
-            if (pendingImageWidth > 0 && pendingImageHeight > 0) {
+            if (activity.e2eeEnabled && activity.e2eeKey != null && pendingImageWidth > 0 && pendingImageHeight > 0) {
                 payloadText = "[sz:" + pendingImageWidth + "," + pendingImageHeight + "]" + text;
             }
             String outText = prepareOutgoingText(payloadText);
