@@ -31,6 +31,15 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        debug {
+            storeFile rootProject.file('app/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
@@ -45,6 +54,7 @@ android {
             buildConfigField "boolean", "SKIP_IMAGES", "true"
         }
         debug {
+            signingConfig signingConfigs.debug
             buildConfigField "boolean", "SKIP_IMAGES", "false"
         }
     }
