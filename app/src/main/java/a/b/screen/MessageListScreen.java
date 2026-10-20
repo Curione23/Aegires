@@ -66,7 +66,7 @@ public class MessageListScreen implements Screen {
     private RecyclerView messageList;
     private LinearLayoutManager layoutManager;
     private EditText input;
-    private TextView attachIcon, replyText, channelNameTv, typingText;
+    private TextView attachIcon, replyText, channelNameTv, typingText, e2eePill;
     private LinearLayout replyBar;
     private LoadingAdapter loadingAdapter;
     private boolean loadingNew, loadingOld, allLoaded, sending;
@@ -116,28 +116,66 @@ public class MessageListScreen implements Screen {
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(16), dp(12), dp(16), dp(12));
         header.setBackgroundColor(DARK);
-        
+
         TextView icon = text(HASH_GLYPH, HINT, 20);
         icon.setTypeface(null, Typeface.BOLD);
         icon.setPadding(0, 0, dp(8), 0);
         header.addView(icon);
-        
+
         channelNameTv = text("Loading...", Color.WHITE, 16);
         channelNameTv.setTypeface(null, Typeface.BOLD);
         channelNameTv.setSingleLine(true);
         channelNameTv.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(channelNameTv, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        
-        TextView search = text("\uD83D\uDD0D", HINT, 18);
-        search.setPadding(dp(12), 0, dp(4), 0);
-        search.setOnClickListener(v -> activity.toast("Search coming soon!"));
-        header.addView(search);
-        
-        TextView members = text("\uD83D\uDC65", HINT, 18);
-        members.setPadding(dp(4), 0, 0, 0);
-        members.setOnClickListener(v -> activity.toast("Member list coming soon!"));
-        header.addView(members);
+
+        // E2EE Header Pill (Hidden if no key is set, toggles encryption when tapped)
+        e2eePill = text("", Color.WHITE, 12);
+        e2eePill.setTypeface(null, Typeface.BOLD);
+        e2eePill.setPadding(dp(8), dp(4), dp(8), dp(4));
+        e2eePill.setOnClickListener(v -> toggleEncryption());
+        updateE2eePillState();
+
+        LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(WRAP, WRAP);
+        header.addView(e2eePill, pillLp);
+
         return header;
+    }
+
+    private void toggleEncryption() {
+        if (activity == null || activity.e2eeKey == null) return;
+        activity.e2eeEnabled = !activity.e2eeEnabled;
+        updateE2eePillState();
+        if (input != null) {
+            input.setHint(activity.e2eeEnabled ? HINT_ENCRYPTED : HINT_MESSAGE);
+        }
+        activity.toast(activity.e2eeEnabled ? "Encryption enabled" : "Encryption disabled");
+    }
+
+    private void updateE2eePillState() {
+        if (activity == null || e2eePill == null) return;
+        if (activity.e2eeKey == null) {
+            e2eePill.setVisibility(View.GONE);
+            return;
+        }
+
+        e2eePill.setVisibility(View.VISIBLE);
+        boolean active = activity.e2eeEnabled;
+        
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setCornerRadius(dp(12));
+        
+        if (active) {
+            pillBg.setColor(0x335865F2); // Subtle blurple accent
+            pillBg.setStroke(dp(1), 0xFF5865F2);
+            e2eePill.setText("\uD83D\uDD12 E2EE");
+            e2eePill.setTextColor(Color.WHITE);
+        } else {
+            pillBg.setColor(0xFF1E1F22);
+            pillBg.setStroke(dp(1), 0xFF2B2D31);
+            e2eePill.setText("\uD83D\uDD13 OFF");
+            e2eePill.setTextColor(HINT);
+        }
+        e2eePill.setBackground(pillBg);
     }
 
     private View buildTypingIndicator() {
@@ -816,7 +854,10 @@ public class MessageListScreen implements Screen {
         return emoji == null ? "" : emoji.optString("name", emoji.optString("id", ""));
     }
 
-    @Override public void onResume() {}
+    @Override 
+    public void onResume() {
+        updateE2eePillState();
+    }
     @Override public void onPause() {}
 
     @Override
