@@ -2,6 +2,8 @@ name: Android CI
 
 on:
   push:
+    branches-ignore:
+      - 'gen3'
   workflow_dispatch:
 
 jobs:
