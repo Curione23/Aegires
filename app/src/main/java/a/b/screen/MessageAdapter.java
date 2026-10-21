@@ -1056,7 +1056,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             CharSequence text;
 
             if (msg.encrypted && (activity == null || activity.e2eeKey == null)) {
-                text = "\uD83D\uDD12 Encrypted message (set key in settings to view)";
+                text = "\uD83D\uDD12 Encrypted message (key missing)";
             } else {
                 if (msg.id == null) {
                     text = render(msg.content, msg);
