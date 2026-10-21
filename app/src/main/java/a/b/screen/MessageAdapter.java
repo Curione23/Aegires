@@ -18,8 +18,10 @@ import android.webkit.WebView;
 import android.widget.*;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
+import android.net.Uri;
 import java.io.InputStream;
 import java.io.File;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DateFormat;
@@ -104,6 +106,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     
     public static final LruCache<String, int[]> mediaSizeCache = new LruCache<>(200);
     public static final ConcurrentHashMap<String, int[]> messageDimensionCache = new ConcurrentHashMap<>();
+    public static final LruCache<String, Bitmap> encryptedVideoThumbnailCache = new LruCache<String, Bitmap>(computeSafeCacheBytes() / 4) {
+        @Override protected int sizeOf(String key, Bitmap value) { return value.getByteCount(); }
+    };
 
     private static int computeSafeCacheBytes() {
         long target = Runtime.getRuntime().maxMemory() / 4;
@@ -113,6 +118,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     final Set<String> loadingEmojis = syncSet();
+    final Set<String> failedVideoLoads = syncSet();
+    final Set<String> failedImageLoads = syncSet();
     final Set<String> pendingUserFetches = syncSet();
     final Set<String> failedUserFetches = syncSet();
     final Set<String> pendingChannelFetches = syncSet();
@@ -543,6 +550,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 t.setPadding(dp(4), dp(4), dp(4), dp(4));
                 return t;
             }
+            if (isVideoFilename(a.filename)) {
+                return encryptedVideoAttachmentView(a, msg, parent);
+            }
             return encryptedAttachmentView(a, msg, parent);
         }
         boolean image = a.type != null && a.type.startsWith("image");
@@ -553,6 +563,154 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             return t;
         }
         return media(image ? a.url : null, false, a.url, video, mediaSize(parent, msg, a.width, a.height, false));
+    }
+    
+    private static boolean isVideoFilename(String name) {
+        if (name == null) return false;
+        String n = name.toLowerCase();
+        return n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".webm") || n.endsWith(".m4v") || n.endsWith(".3gp");
+    }
+    
+    private View encryptedVideoAttachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
+        int w = a.width, h = a.height;
+        if (msg != null && msg.id != null && messageDimensionCache.containsKey(msg.id)) {
+            int[] dim = messageDimensionCache.get(msg.id);
+            if (dim != null) { w = dim[0]; h = dim[1]; }
+        }
+        int[] initialSize = mediaSize(parent, msg, w, h, true);
+        FrameLayout frame = new FrameLayout(activity);
+        frame.setLayoutParams(lp(initialSize[0], initialSize[1], 0, dp(4), 0, dp(4)));
+        frame.setBackgroundColor(EMBED_BG);
+
+        ImageView iv = new ImageView(activity);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        frame.addView(iv, new FrameLayout.LayoutParams(MATCH, MATCH));
+
+        TextView status = tv("\uD83D\uDD12 Decrypting video\u2026", MUTED, 12);
+        status.setGravity(Gravity.CENTER);
+        frame.addView(status, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER));
+
+        TextView playBtn = tv("\u25B6", Color.WHITE, 30);
+        frame.addView(playBtn, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
+
+        final File[] videoFileHolder = new File[1];
+        loadEncryptedVideo(a.url, parent, (file, thumb) -> {
+            if (file == null) {
+                status.setText("\u26A0 Decrypt failed");
+                playBtn.setVisibility(View.GONE);
+                return;
+            }
+            videoFileHolder[0] = file;
+            if (thumb != null) {
+                iv.setImageBitmap(thumb);
+            }
+            status.setVisibility(View.GONE);
+        });
+
+        frame.setOnClickListener(v -> {
+            if (videoFileHolder[0] != null) {
+                showEncryptedFullscreenVideo(videoFileHolder[0]);
+            }
+        });
+        return frame;
+    }
+
+    private interface EncryptedVideoCallback {
+        void onResult(File videoFile, Bitmap thumbnail);
+    }
+
+    private void loadEncryptedVideo(String url, ViewGroup parent, EncryptedVideoCallback onDone) {
+        if (url == null || activity == null || activity.e2eeKey == null) {
+            onDone.onResult(null, null);
+            return;
+        }
+        String cacheKey = getCacheKey(url);
+        if (failedVideoLoads.contains(cacheKey)) {
+            onDone.onResult(null, null);
+            return;
+        }
+        Bitmap cachedThumb = encryptedVideoThumbnailCache.get(cacheKey);
+        File diskFile = getVideoDiskCacheFile(activity.getApplicationContext(), url);
+        
+        if (cachedThumb != null && diskFile != null && diskFile.exists() && diskFile.length() > 0) {
+            onDone.onResult(diskFile, cachedThumb);
+            return;
+        }
+
+        final javax.crypto.SecretKey key = activity.e2eeKey;
+
+        emojiExecutor.execute(() -> {
+            if (diskFile != null && diskFile.exists() && diskFile.length() > 0) {
+                Bitmap thumb = encryptedVideoThumbnailCache.get(cacheKey);
+                if (thumb == null) {
+                    thumb = extractVideoThumbnail(diskFile);
+                    if (thumb != null) encryptedVideoThumbnailCache.put(cacheKey, thumb);
+                }
+                final Bitmap finalThumb = thumb;
+                ui.post(() -> onDone.onResult(diskFile, finalThumb));
+                return;
+            }
+
+            HttpURLConnection conn = null;
+            try {
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(30000);
+                conn.setRequestProperty("User-Agent", USER_AGENT);
+                if (conn.getResponseCode() == 200 && diskFile != null) {
+                    try (InputStream netIn = conn.getInputStream();
+                         OutputStream fileOut = java.nio.file.Files.newOutputStream(diskFile.toPath())) {
+                        boolean success = Crypto.decryptStream(netIn, fileOut, key);
+                        if (success && diskFile.exists() && diskFile.length() > 0) {
+                            Bitmap thumb = extractVideoThumbnail(diskFile);
+                            if (thumb != null) encryptedVideoThumbnailCache.put(cacheKey, thumb);
+                            ui.post(() -> onDone.onResult(diskFile, thumb));
+                            return;
+                        } else {
+                            if (diskFile.exists()) diskFile.delete();
+                        }
+                    } catch (Exception ignored) {
+                        if (diskFile.exists()) diskFile.delete();
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            failedVideoLoads.add(cacheKey);
+            ui.post(() -> onDone.onResult(null, null));
+        });
+    }
+
+    private static Bitmap extractVideoThumbnail(File file) {
+        if (file == null || !file.exists()) return null;
+        android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(file.getAbsolutePath());
+            return retriever.getFrameAtTime(0);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+    }
+
+    private void showEncryptedFullscreenVideo(File videoFile) {
+        if (activity == null || videoFile == null || !videoFile.exists()) return;
+        hideKeyboard();
+        WebView web = new WebView(activity);
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setAllowFileAccess(true);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+
+        String fileUri = Uri.fromFile(videoFile).toString();
+        String media = "<video controls autoplay playsinline style='width:100%;max-height:100vh'><source src=\"" + fileUri + "\" type=\"video/mp4\"></video>";
+        web.loadDataWithBaseURL("file:///", "<html><body style='margin:0;height:100vh;background:#000;display:flex;" +
+                "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
+        activity.showFullscreen(web);
     }
 
     private View encryptedAttachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
@@ -603,12 +761,18 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         String safeName = Math.abs(getCacheKey(url).hashCode()) + ".enc_cache";
         return new File(context.getCacheDir(), safeName);
     }
+    
+    private File getVideoDiskCacheFile(Context context, String url) {
+        if (context == null || url == null) return null;
+        String safeName = Math.abs((getCacheKey(url) + "_vid").hashCode()) + ".enc_vid_cache";
+        return new File(context.getCacheDir(), safeName);
+    }
 
     private static void cleanDiskCache(Context context) {
         if (context == null) return;
         try {
             File cacheDir = context.getCacheDir();
-            File[] files = cacheDir.listFiles((dir, name) -> name.endsWith(".enc_cache"));
+            File[] files = cacheDir.listFiles((dir, name) -> name.endsWith(".enc_cache") || name.endsWith(".enc_vid_cache"));
             if (files == null || files.length == 0) return;
             long now = System.currentTimeMillis();
             long maxAgeMillis = 1L * 24 * 60 * 60 * 1000;
@@ -642,6 +806,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             return;
         }
         String cacheKey = getCacheKey(url);
+        if (failedImageLoads.contains(cacheKey)) {
+            onDone.onResult(null, 0, 0);
+            return;
+        }
         Bitmap cached = encryptedBitmapCache.get(cacheKey);
         if (cached != null) {
             onDone.onResult(cached, cached.getWidth(), cached.getHeight());
@@ -701,6 +869,11 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                     if (result != null) encryptedBitmapCache.put(cacheKey, result);
                 } catch (Exception ignored) {}
             }
+            
+            if (result == null) {
+                failedImageLoads.add(cacheKey);
+            }
+            
             final Bitmap r = result;
             final int w = imgW, h = imgH;
             ui.post(() -> onDone.onResult(r, w, h));

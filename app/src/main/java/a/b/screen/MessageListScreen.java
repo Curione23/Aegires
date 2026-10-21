@@ -590,7 +590,9 @@ public class MessageListScreen implements Screen {
     private static String encryptedFileName(String original) {
         if (original == null || original.isEmpty()) return "file.enc";
         int dot = original.lastIndexOf('.');
-        if (dot > 0 && dot < original.length() - 1) return original.substring(0, dot) + ".enc" + original.substring(dot);
+        if (dot > 0 && dot < original.length() - 1) {
+            return original.substring(0, dot) + ".enc" + original.substring(dot);
+        }
         return original + ".enc";
     }
 
@@ -616,7 +618,10 @@ public class MessageListScreen implements Screen {
     }
 
     private void pickImage() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
         try {
             activity.startActivityForResult(intent, PICK_IMAGE_REQUEST);
         } catch (ActivityNotFoundException e) {
@@ -629,21 +634,49 @@ public class MessageListScreen implements Screen {
         if (requestCode != PICK_IMAGE_REQUEST || resultCode != Activity.RESULT_OK || data == null || activity == null) return;
         Uri uri = data.getData();
         if (uri == null) return;
+
         ContentResolver cr = activity.getContentResolver();
         String mime = cr.getType(uri);
         pendingFileUri = uri;
         pendingFileName = fileName(cr, uri);
-        pendingMimeType = mime != null ? mime : "image/*";
-        try (InputStream is = cr.openInputStream(uri)) {
-            android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            android.graphics.BitmapFactory.decodeStream(is, null, bounds);
-            pendingImageWidth = bounds.outWidth;
-            pendingImageHeight = bounds.outHeight;
-        } catch (Exception e) {
-            pendingImageWidth = 0;
-            pendingImageHeight = 0;
+        pendingMimeType = mime != null ? mime : "application/octet-stream";
+
+        pendingImageWidth = 0;
+        pendingImageHeight = 0;
+
+        if (pendingMimeType.startsWith("video/")) {
+            android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+            try {
+                retriever.setDataSource(activity, uri);
+                String w = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+                String h = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+                String rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+                
+                if (w != null && h != null) {
+                    int width = Integer.parseInt(w);
+                    int height = Integer.parseInt(h);
+                    if ("90".equals(rotation) || "270".equals(rotation)) {
+                        pendingImageWidth = height;
+                        pendingImageHeight = width;
+                    } else {
+                        pendingImageWidth = width;
+                        pendingImageHeight = height;
+                    }
+                }
+                retriever.release();
+            } catch (Exception e) {
+                try { retriever.release(); } catch (Exception ignored) {}
+            }
+        } else {
+            try (InputStream is = cr.openInputStream(uri)) {
+                android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeStream(is, null, bounds);
+                pendingImageWidth = bounds.outWidth;
+                pendingImageHeight = bounds.outHeight;
+            } catch (Exception ignored) {}
         }
+
         activity.toast("File attached: " + pendingFileName);
     }
 

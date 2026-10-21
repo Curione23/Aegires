@@ -137,33 +137,77 @@ public final class Crypto {
         }
     }
 
-    public static byte[] encryptBytes(byte[] plaintext, SecretKey key) {
-        if (plaintext == null || key == null) return null;
+    public static boolean encryptStream(java.io.InputStream in, java.io.OutputStream out, SecretKey key) {
+        if (in == null || out == null || key == null) return false;
         try {
             byte[] iv = new byte[IV_LENGTH];
             RANDOM.nextBytes(iv);
+            out.write(iv);
+            
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            byte[] ct = cipher.doFinal(plaintext);
-            byte[] out = new byte[iv.length + ct.length];
-            System.arraycopy(iv, 0, out, 0, iv.length);
-            System.arraycopy(ct, 0, out, iv.length, ct.length);
-            return out;
+            
+            try (javax.crypto.CipherOutputStream cos = new javax.crypto.CipherOutputStream(out, cipher)) {
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) != -1) {
+                    cos.write(buffer, 0, n);
+                }
+                cos.flush();
+            }
+            return true;
         } catch (Exception e) {
-            return null;
+            return false;
         }
+    }
+
+    public static boolean decryptStream(java.io.InputStream in, java.io.OutputStream out, SecretKey key) {
+        if (in == null || out == null || key == null) return false;
+        try {
+            byte[] iv = new byte[IV_LENGTH];
+            int read = 0;
+            while (read < IV_LENGTH) {
+                int n = in.read(iv, read, IV_LENGTH - read);
+                if (n == -1) return false;
+                read += n;
+            }
+            
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+            
+            try (javax.crypto.CipherInputStream cis = new javax.crypto.CipherInputStream(in, cipher)) {
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = cis.read(buffer)) != -1) {
+                    out.write(buffer, 0, n);
+                }
+                out.flush();
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static byte[] encryptBytes(byte[] plaintext, SecretKey key) {
+        if (plaintext == null || key == null) return null;
+        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(plaintext);
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            if (encryptStream(in, out, key)) {
+                return out.toByteArray();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     public static byte[] decryptBytes(byte[] combined, SecretKey key) {
         if (combined == null || key == null || combined.length < IV_LENGTH + (GCM_TAG_LENGTH / 8)) return null;
-        try {
-            byte[] iv = Arrays.copyOfRange(combined, 0, IV_LENGTH);
-            byte[] ct = Arrays.copyOfRange(combined, IV_LENGTH, combined.length);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            return cipher.doFinal(ct);
-        } catch (Exception e) {
-            return null;
-        }
+        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(combined);
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            if (decryptStream(in, out, key)) {
+                return out.toByteArray();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 }
