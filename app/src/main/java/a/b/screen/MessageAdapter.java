@@ -281,7 +281,16 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private String displayName(Message message) {
+        String nick = null;
+        if (activity != null && message.author != null && message.author.id != null) {
+            String cacheKey = guildId != null ? guildId + "_" + message.author.id : message.author.id;
+            nick = activity.userNickCache != null ? activity.userNickCache.get(cacheKey) : null;
+            if (nick == null && guildId != null) {
+                nick = activity.userNickCache.get(message.author.id);
+            }
+        }
         String name = isReal(message.memberNick) ? message.memberNick :
+                      isReal(nick) ? nick :
                       message.author == null ? "System" :
                       isReal(message.author.globalName) ? message.author.globalName : message.author.username;
         if (activity != null && message.author != null && message.author.id != null && name != null && activity.userNameCache != null) {
@@ -290,9 +299,20 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         return name;
     }
 
-    private static CharSequence replyPreview(Message m) {
+    private CharSequence replyPreview(Message m) {
         SpannableStringBuilder sb = new SpannableStringBuilder("\u21B3 ");
-        sb.append(m.replyToAuthorName != null ? m.replyToAuthorName : "unknown");
+        String authorName = m.replyToAuthorName;
+        if (activity != null && m.replyToAuthorId != null) {
+            String cacheKey = guildId != null ? guildId + "_" + m.replyToAuthorId : m.replyToAuthorId;
+            String cachedNick = activity.userNickCache != null ? activity.userNickCache.get(cacheKey) : null;
+            if (cachedNick == null && guildId != null) {
+                cachedNick = activity.userNickCache.get(m.replyToAuthorId);
+            }
+            if (isReal(cachedNick)) {
+                authorName = cachedNick;
+            }
+        }
+        sb.append(authorName != null ? authorName : "unknown");
         sb.setSpan(new StyleSpan(Typeface.BOLD), 2, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         sb.append("  ");
         if (m.replyToMissing) {

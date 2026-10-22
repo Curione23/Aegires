@@ -2,12 +2,10 @@ package a.b.model;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import a.b.util.Crypto;
 
 public class Message {
@@ -17,13 +15,12 @@ public class Message {
   public boolean encrypted;
   public String memberNick;
   public long timestamp;
-
   public String replyToMessageId;
   public String replyToChannelId;
+  public String replyToAuthorId;
   public String replyToAuthorName;
   public String replyToContent;
   public boolean replyToMissing;
-
   public List<String> mentionedUserIds = new ArrayList<String>();
   public Map<String, String> mentionedUsers = new HashMap<String, String>();
   public List<Attachment> attachments = new ArrayList<Attachment>();
@@ -37,18 +34,15 @@ public class Message {
     msg.content = m.has("content") ? m.optString("content", "") : null;
     msg.encrypted = Crypto.looksEncrypted(msg.content);
     msg.timestamp = extractTimestamp(msg.id);
-
     JSONObject authorJson = m.getJSONObject("author");
     msg.author = new Author();
     msg.author.id = authorJson.getString("id");
     msg.author.username = authorJson.getString("username");
     msg.author.globalName = authorJson.isNull("global_name") ? null : authorJson.optString("global_name", null);
     msg.author.avatar = authorJson.isNull("avatar") ? null : authorJson.optString("avatar", null);
-
     JSONObject member = m.optJSONObject("member");
     if (member != null) {
         if (!member.isNull("nick")) msg.memberNick = member.optString("nick", null);
-    
         JSONArray rolesArr = member.optJSONArray("roles");
         if (rolesArr != null) {
             for (int i = 0; i < rolesArr.length(); i++) {
@@ -61,7 +55,6 @@ public class Message {
     parseEmbeds(m, msg);
     parseReactions(m, msg);
     parseReference(m, msg);
-
     return msg;
   }
 
@@ -110,7 +103,6 @@ public class Message {
       embed.title = e.isNull("title") ? null : e.optString("title", null);
       embed.description = e.isNull("description") ? null : e.optString("description", null);
       embed.color = e.optInt("color", 0);
-
       JSONObject t = e.optJSONObject("thumbnail");
       if (t != null) {
         embed.thumbnailUrl = t.optString("url", null);
@@ -118,7 +110,6 @@ public class Message {
         embed.thumbnailWidth = t.optInt("width", 0);
         embed.thumbnailHeight = t.optInt("height", 0);
       }
-
       JSONObject im = e.optJSONObject("image");
       if (im != null) {
         embed.imageUrl = im.optString("url", null);
@@ -126,7 +117,6 @@ public class Message {
         embed.imageWidth = im.optInt("width", 0);
         embed.imageHeight = im.optInt("height", 0);
       }
-
       JSONObject v = e.optJSONObject("video");
       if (v != null) {
         embed.videoUrl = v.optString("url", null);
@@ -134,7 +124,6 @@ public class Message {
         embed.videoWidth = v.optInt("width", 0);
         embed.videoHeight = v.optInt("height", 0);
       }
-
       JSONArray fields = e.optJSONArray("fields");
       if (fields != null) {
         for (int j = 0; j < fields.length(); j++) {
@@ -146,10 +135,8 @@ public class Message {
               f.optBoolean("inline", false)));
         }
       }
-
       JSONObject footer = e.optJSONObject("footer");
       if (footer != null) embed.footer = footer.optString("text", null);
-
       msg.embeds.add(embed);
     }
   }
@@ -174,22 +161,27 @@ public class Message {
     if (ref == null) return;
     msg.replyToMessageId = ref.optString("message_id", null);
     msg.replyToChannelId = ref.optString("channel_id", null);
-
     JSONObject refMsg = m.optJSONObject("referenced_message");
     if (refMsg == null) {
       if (msg.replyToMessageId != null) msg.replyToMissing = true;
       return;
     }
-
     JSONObject refAuthor = refMsg.optJSONObject("author");
     if (refAuthor != null) {
+      msg.replyToAuthorId = refAuthor.optString("id", null);
       String gn = refAuthor.isNull("global_name") ? null : refAuthor.optString("global_name", null);
-      msg.replyToAuthorName = (gn != null && gn.length() > 0 && !"null".equals(gn))
-          ? gn : refAuthor.optString("username", "unknown");
+      String username = refAuthor.optString("username", "unknown");
+      String globalName = (gn != null && gn.length() > 0 && !"null".equals(gn)) ? gn : username;
+      
+      JSONObject refMember = refMsg.optJSONObject("member");
+      String refNick = null;
+      if (refMember != null && !refMember.isNull("nick")) {
+          refNick = refMember.optString("nick", null);
+      }
+      msg.replyToAuthorName = (refNick != null && refNick.length() > 0 && !"null".equals(refNick)) ? refNick : globalName;
     } else {
       msg.replyToAuthorName = "unknown";
     }
-
     String c = refMsg.optString("content", "");
     msg.replyToContent = c == null ? "" : c;
   }
@@ -198,6 +190,7 @@ public class Message {
     if (other == null) return;
     if (other.content != null) this.content = other.content;
     if (other.memberNick != null) this.memberNick = other.memberNick;
+    if (other.replyToAuthorId != null) this.replyToAuthorId = other.replyToAuthorId;
     if (other.attachments != null && !other.attachments.isEmpty()) this.attachments = other.attachments;
     if (other.embeds != null && !other.embeds.isEmpty()) this.embeds = other.embeds;
     if (other.reactions != null && !other.reactions.isEmpty()) this.reactions = other.reactions;
@@ -219,6 +212,6 @@ public class Message {
     public String url, type, filename;
     public String proxyUrl;
     public int width, height;
-    Attachment(String u, String t, String f) { url = u; type = t; filename = f; }
+    public Attachment(String u, String t, String f) { url = u; type = t; filename = f; }
   }
 }

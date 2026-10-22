@@ -47,6 +47,8 @@ public class MainActivity extends Activity {
     public final ConcurrentHashMap<String, List<Guild>> guildCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, GuildInfo> guildInfoCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, List<String>> userRoleCache = new ConcurrentHashMap<>();
+    public final ConcurrentHashMap<String, String> userNickCache = new ConcurrentHashMap<>();
+    
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -160,6 +162,7 @@ public class MainActivity extends Activity {
         userNameCache.clear();
         channelNameCache.clear();
         roleCache.clear();
+        userNickCache.clear();
         
         apiClient = new ApiClient(handler);
         token = null;

@@ -71,6 +71,7 @@ public class MessageListScreen implements Screen {
     private LoadingAdapter loadingAdapter;
     private boolean loadingNew, loadingOld, allLoaded, sending;
     private Uri pendingFileUri;
+    private final Set<String> pendingNickFetches = new HashSet<>();
     private String pendingFileName, pendingMimeType;
     private String editingId, replyToId;
     private final Map<String, String> typingUsers = new HashMap<>();
@@ -381,24 +382,44 @@ public class MessageListScreen implements Screen {
 
     private void fetchMissingRoles() {
         if (guildId == null || activity == null || activity.apiClient == null) return;
-        Set<String> fetched = new HashSet<>();
         for (Message msg : messages) {
             if (msg.author == null || msg.author.id == null) continue;
             String userId = msg.author.id;
-            if (activity.userRoleCache.containsKey(userId)) continue;
-            if (!fetched.add(userId)) continue;
+            String cacheKey = guildId + "_" + userId;
+            boolean hasRole = activity.userRoleCache.containsKey(userId);
+            boolean hasNick = activity.userNickCache != null && activity.userNickCache.containsKey(cacheKey);
+            if (hasRole && hasNick) continue;
+            
+            if (!pendingNickFetches.add(userId)) continue;
+
             activity.apiClient.fetchMember(guildId, userId, new ApiClient.Callback<JSONObject>() {
                 @Override public void onSuccess(JSONObject member) {
+                    pendingNickFetches.remove(userId);
                     if (activity == null) return;
+                    boolean updated = false;
                     JSONArray rolesArr = member.optJSONArray("roles");
-                    if (rolesArr != null && rolesArr.length() > 0) {
+                    if (rolesArr != null) {
                         List<String> roleIds = new ArrayList<>();
                         for (int i = 0; i < rolesArr.length(); i++) roleIds.add(rolesArr.optString(i));
                         activity.userRoleCache.put(userId, roleIds);
+                        updated = true;
+                    }
+                    if (member.has("nick")) {
+                        String nick = member.isNull("nick") ? null : member.optString("nick", null);
+                        if (isReal(nick)) {
+                            activity.userNickCache.put(cacheKey, nick);
+                        } else {
+                            activity.userNickCache.remove(cacheKey);
+                        }
+                        updated = true;
+                    }
+                    if (updated) {
                         adapter.refreshUser(userId);
                     }
                 }
-                @Override public void onError(String err) {}
+                @Override public void onError(String err) {
+                    pendingNickFetches.remove(userId);
+                }
             });
         }
     }
@@ -445,6 +466,9 @@ public class MessageListScreen implements Screen {
         boolean changed = false;
         for (Message m : incoming) {
             decryptMessageInPlace(m);
+            if (m.author != null && m.author.id != null && isReal(m.memberNick) && guildId != null && activity != null && activity.userNickCache != null) {
+                activity.userNickCache.put(guildId + "_" + m.author.id, m.memberNick);
+            }
             if (m.id != null && messageIds.add(m.id)) {
                 messages.add(m);
                 changed = true;
@@ -516,7 +540,22 @@ public class MessageListScreen implements Screen {
         }
         if (Crypto.looksEncrypted(m.replyToContent)) {
             String plain = Crypto.decrypt(m.replyToContent, activity.e2eeKey);
-            if (plain != null) m.replyToContent = plain;
+            if (plain != null) {
+                m.replyToContent = plain;
+                cleanReplyDimensions(m);
+            }
+        } else if (m.replyToContent != null) {
+            cleanReplyDimensions(m);
+        }
+    }
+
+    private static void cleanReplyDimensions(Message m) {
+        if (m == null || m.replyToContent == null) return;
+        java.util.regex.Matcher matcher = SIZE_TAG_PATTERN.matcher(m.replyToContent);
+        if (matcher.find()) {
+            try {
+                m.replyToContent = m.replyToContent.substring(matcher.end());
+            } catch (Exception ignored) {}
         }
     }
 
@@ -727,8 +766,17 @@ public class MessageListScreen implements Screen {
         attachIcon.setText(ATTACH_GLYPH);
     }
 
-    private static String nameOf(Message m) {
+    private String nameOf(Message m) {
+        String nick = null;
+        if (activity != null && m.author != null && m.author.id != null) {
+            String cacheKey = guildId != null ? guildId + "_" + m.author.id : m.author.id;
+            nick = activity.userNickCache != null ? activity.userNickCache.get(cacheKey) : null;
+            if (nick == null && guildId != null) {
+                nick = activity.userNickCache.get(m.author.id);
+            }
+        }
         if (isReal(m.memberNick)) return m.memberNick;
+        if (isReal(nick)) return nick;
         if (m.author == null) return "unknown";
         return isReal(m.author.globalName) ? m.author.globalName : m.author.username;
     }
