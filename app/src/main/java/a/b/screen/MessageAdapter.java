@@ -236,44 +236,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         return highest != null && highest.color != 0 ? highest.color | 0xFF000000 : Color.WHITE;
     }
 
-    private void bindReactions(MessageViewHolder h, Message msg, ViewGroup parent) {
-        h.reactions.removeAllViews();
-        boolean any = msg.reactions != null && !msg.reactions.isEmpty();
-        h.reactions.setVisibility(any ? View.VISIBLE : View.GONE);
-        if (!any) return;
-        int maxWidth = parent.getWidth() - dp(20) - bodyIndent;
-        LinearLayout row = null;
-        int used = 0;
-        for (Reaction r : msg.reactions) {
-            if (r == null) continue;
-            View chip = reactionChip(r);
-            chip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-            int w = chip.getMeasuredWidth() + dp(4);
-            if (row == null || (maxWidth > 0 && used + w > maxWidth)) {
-                row = linear(HORIZONTAL);
-                row.setLayoutParams(lp(WRAP, WRAP, 0, 0, 0, dp(4)));
-                h.reactions.addView(row);
-                used = 0;
-            }
-            row.addView(chip);
-            used += w;
-        }
-    }
-
-    private View reactionChip(Reaction r) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(r.me ? 0x335865F2 : PANEL);
-        if (r.me) bg.setStroke(dp(1), MENTION_FG);
-        bg.setCornerRadius(dp(6));
-        LinearLayout chip = linear(HORIZONTAL);
-        chip.setPadding(dp(6), dp(4), dp(6), dp(4));
-        chip.setLayoutParams(lp(WRAP, WRAP, 0, 0, dp(4), 0));
-        chip.setBackground(bg);
-        chip.addView(tv(r.emoji, Color.WHITE, 14));
-        chip.addView(tv(" " + r.count, MUTED, 14));
-        return chip;
-    }
-
     private static boolean sameGroup(Message prev, Message cur) {
         if (prev.author == null || cur.author == null || cur.replyToMessageId != null) return false;
         long difference = cur.timestamp - prev.timestamp;
@@ -1154,7 +1116,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     public final class MessageViewHolder extends RecyclerView.ViewHolder implements View.OnLongClickListener {
-        final LinearLayout root, header, body, attachments, embeds, reactions;
+        final LinearLayout root, header, body, attachments, embeds;
         final ImageView avatar;
         final TextView name, time, reply, content;
         Message msg;
@@ -1226,9 +1188,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             attachments.setOrientation(VERTICAL);
             embeds = new LinearLayout(activity);
             embeds.setOrientation(VERTICAL);
-            reactions = new LinearLayout(activity);
-            reactions.setOrientation(VERTICAL);
-            reactions.setPadding(0, dp(4), 0, 0);
 
             body = new LinearLayout(activity);
             body.setOrientation(VERTICAL);
@@ -1237,7 +1196,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             body.addView(content);
             body.addView(attachments);
             body.addView(embeds);
-            body.addView(reactions);
 
             root.addView(header);
             root.addView(body);
@@ -1281,7 +1239,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                     if (e != null && !duplicatesAttachment(e, msg.attachments)) add(embeds, embedView(e, msg, root));
                 }
             }
-            bindReactions(this, msg, root);
         }
 
         private void add(LinearLayout box, View child) {

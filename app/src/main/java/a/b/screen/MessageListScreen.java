@@ -30,7 +30,6 @@ import java.util.*;
 import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.Message;
-import a.b.model.Reaction;
 import a.b.util.Crypto;
 
 public class MessageListScreen implements Screen {
@@ -875,8 +874,6 @@ public class MessageListScreen implements Screen {
                         for (int i = 0; i < ids.length(); i++) gatewayDelete(ids.optString(i));
                     }
                     break;
-                case "MESSAGE_REACTION_ADD": gatewayReaction(true, d); break;
-                case "MESSAGE_REACTION_REMOVE": gatewayReaction(false, d); break;
                 case "TYPING_START": handleTypingStart(d); break;
             }
         } catch (Exception ignored) {}
@@ -907,32 +904,6 @@ public class MessageListScreen implements Screen {
         if (i >= 0) messages.remove(i);
         adapter.parsedContentCache.remove(id);
         adapter.submitList(new ArrayList<>(messages));
-    }
-
-    private void gatewayReaction(boolean add, JSONObject d) throws Exception {
-        int i = indexOf(d.getString("message_id"));
-        if (i < 0) return;
-        Message m = messages.get(i);
-        String key = reactionKey(d.optJSONObject("emoji"));
-        boolean self = activity.selfUserId != null && activity.selfUserId.equals(d.optString("user_id", null));
-        if (m.reactions == null) m.reactions = new ArrayList<>();
-        Reaction r = null;
-        for (Reaction x : m.reactions) {
-            if (key.equals(x.emoji)) { r = x; break; }
-        }
-        if (add) {
-            if (r == null) m.reactions.add(new Reaction(key, 1, self));
-            else { r.count++; if (self) r.me = true; }
-        } else {
-            if (r == null) return;
-            if (self) r.me = false;
-            if (--r.count <= 0) m.reactions.remove(r);
-        }
-        adapter.invalidateMessage(m.id);
-    }
-
-    private static String reactionKey(JSONObject emoji) {
-        return emoji == null ? "" : emoji.optString("name", emoji.optString("id", ""));
     }
 
     @Override 

@@ -25,7 +25,6 @@ public class Message {
   public Map<String, String> mentionedUsers = new HashMap<String, String>();
   public List<Attachment> attachments = new ArrayList<Attachment>();
   public List<Embed> embeds = new ArrayList<Embed>();
-  public List<Reaction> reactions = new ArrayList<Reaction>();
   public List<String> roleIds = new ArrayList<>();
 
   public static Message fromJson(JSONObject m) throws Exception {
@@ -53,7 +52,6 @@ public class Message {
     parseMentions(m, msg);
     parseAttachments(m, msg);
     parseEmbeds(m, msg);
-    parseReactions(m, msg);
     parseReference(m, msg);
     return msg;
   }
@@ -141,21 +139,6 @@ public class Message {
     }
   }
 
-  private static void parseReactions(JSONObject m, Message msg) {
-    JSONArray arr = m.optJSONArray("reactions");
-    if (arr == null) return;
-    for (int i = 0; i < arr.length(); i++) {
-      JSONObject r = arr.optJSONObject(i);
-      if (r == null) continue;
-      JSONObject emoji = r.optJSONObject("emoji");
-      if (emoji == null) continue;
-      msg.reactions.add(new Reaction(
-          emoji.optString("name", emoji.optString("id", "")),
-          r.optInt("count", 0),
-          r.optBoolean("me", false)));
-    }
-  }
-
   private static void parseReference(JSONObject m, Message msg) {
     JSONObject ref = m.optJSONObject("message_reference");
     if (ref == null) return;
@@ -193,7 +176,6 @@ public class Message {
     if (other.replyToAuthorId != null) this.replyToAuthorId = other.replyToAuthorId;
     if (other.attachments != null && !other.attachments.isEmpty()) this.attachments = other.attachments;
     if (other.embeds != null && !other.embeds.isEmpty()) this.embeds = other.embeds;
-    if (other.reactions != null && !other.reactions.isEmpty()) this.reactions = other.reactions;
     if (other.mentionedUsers != null && !other.mentionedUsers.isEmpty()) {
       this.mentionedUsers.putAll(other.mentionedUsers);
     }
