@@ -716,20 +716,40 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         TextView status = tv("\uD83D\uDD12 Decrypting\u2026", MUTED, 12);
         status.setGravity(Gravity.CENTER);
         frame.addView(status, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER));
-        final Bitmap[] decoded = new Bitmap[1];
-        loadEncryptedBitmap(a.url, parent, (bmp, realW, realH) -> {
+        final File[] fileHolder = new File[1];
+        loadEncryptedBitmap(a.url, parent, (diskFile, bmp, realW, realH) -> {
             if (bmp == null) {
                 status.setText("\u26A0 Decrypt failed");
                 return;
             }
-            decoded[0] = bmp;
+            fileHolder[0] = diskFile;
             iv.setImageBitmap(bmp);
             status.setVisibility(View.GONE);
         });
+
         frame.setOnClickListener(v -> {
-            if (decoded[0] != null) showEncryptedFullscreen(decoded[0]);
+            if (fileHolder[0] != null && fileHolder[0].exists()) {
+                showEncryptedFullscreenFile(fileHolder[0], a.filename);
+            }
         });
         return frame;
+    }
+    
+    private void showEncryptedFullscreenFile(File file, String filename) {
+        if (activity == null || file == null || !file.exists()) return;
+        hideKeyboard();
+
+        WebView web = new WebView(activity);
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setAllowFileAccess(true);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
+
+        String fileUri = Uri.fromFile(file).toString();
+        String media = "<img src=\"" + fileUri + "\" style='max-width:100%;max-height:100vh;object-fit:contain'>";
+        web.loadDataWithBaseURL("file:///", "<html><body style='margin:0;height:100vh;background:#000;display:flex;" + "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
+        activity.showFullscreen(web);
     }
 
     private static String getCacheKey(String url) {
@@ -779,31 +799,32 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private interface EncryptedBitmapCallback {
-        void onResult(Bitmap bitmap, int realWidth, int realHeight);
+        void onResult(File diskFile, Bitmap bitmap, int realWidth, int realHeight);
     }
 
     private void loadEncryptedBitmap(String url, ViewGroup parent, EncryptedBitmapCallback onDone) {
         if (url == null || activity == null || activity.e2eeKey == null) {
-            onDone.onResult(null, 0, 0);
+            onDone.onResult(null, null, 0, 0);
             return;
         }
         String cacheKey = getCacheKey(url);
         if (failedImageLoads.contains(cacheKey)) {
-            onDone.onResult(null, 0, 0);
+            onDone.onResult(null, null, 0, 0);
             return;
         }
         Bitmap cached = encryptedBitmapCache.get(cacheKey);
+        final Context ctx = activity != null ? activity.getApplicationContext() : null;
         if (cached != null) {
-            onDone.onResult(cached, cached.getWidth(), cached.getHeight());
+            File diskFile = getDiskCacheFile(ctx, url);
+            onDone.onResult(diskFile, cached, cached.getWidth(), cached.getHeight());
             return;
         }
         int pw = parent != null ? parent.getWidth() : 0;
         if (pw <= 0 && activity != null) pw = activity.getResources().getDisplayMetrics().widthPixels;
         final int targetW = Math.max(pw > 0 ? pw - dp(112) : dp(248), dp(120));
         final int targetH = dp(400);
-        final Context ctx = activity.getApplicationContext();
         final javax.crypto.SecretKey key = activity.e2eeKey;
-        
+
         emojiExecutor.execute(() -> {
             Bitmap result = null;
             int imgW = 0, imgH = 0;
@@ -851,14 +872,14 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                     if (result != null) encryptedBitmapCache.put(cacheKey, result);
                 } catch (Exception ignored) {}
             }
-            
+
             if (result == null) {
                 failedImageLoads.add(cacheKey);
             }
-            
+
             final Bitmap r = result;
             final int w = imgW, h = imgH;
-            ui.post(() -> onDone.onResult(r, w, h));
+            ui.post(() -> onDone.onResult(diskFile, r, w, h));
         });
     }
 
