@@ -22,15 +22,15 @@ import a.b.api.ApiClient;
 import a.b.util.SimpleMarkdown;
 
 public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
-    private static final int BG = 0xFF000000;
-    private static final int BANNER_FALLBACK = 0xFF0A0A0A;
-    private static final int CARD_BG = 0xFF101010;
-    private static final int CARD_BORDER = 0xFF2B2D31;
+    private static final int BG = 0xFF2B2D31;
+    private static final int BANNER_FALLBACK = 0xFF1E1F22;
+    private static final int CARD_BG = 0xFF1E1F22;
+    private static final int CARD_BORDER = 0xFF3F4147;
     private static final int TEXT_PRIMARY = 0xFFFFFFFF;
-    private static final int TEXT_SECONDARY = 0xFFB9BBBE;
-    private static final int TEXT_MUTED = 0xFF72767D;
+    private static final int TEXT_SECONDARY = 0xFFDBDEE1;
+    private static final int TEXT_MUTED = 0xFF949BA4;
     private static final int ACCENT = 0xFF5865F2;
-    private static final int COPY_BG = 0xFF1A1A1A;
+    private static final int COPY_BG = 0xFF2B2D31;
 
     MainActivity activity;
     final String userId;
@@ -72,7 +72,16 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
         
         activity.apiClient.fetchUserProfileFull(userId, this);
         loadRoles();
-        return view = scroll;
+        FrameLayout frame = new FrameLayout(activity);
+        frame.setBackgroundColor(BG);
+        frame.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout back = a.b.util.Ui.iconButton(activity, a.b.util.Ui.I_BACK, 0xFFFFFFFF);
+        back.setBackground(a.b.util.Ui.ripple(a.b.util.Ui.oval(0x99000000), -1));
+        FrameLayout.LayoutParams backLp = new FrameLayout.LayoutParams(dp(40), dp(40));
+        backLp.setMargins(dp(8), dp(8), 0, 0);
+        back.setOnClickListener(v -> { if (this.activity != null) this.activity.goBack(); });
+        frame.addView(back, backLp);
+        return view = frame;
     }
 
     private View buildBanner() {
@@ -101,7 +110,7 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
         
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
-        bg.setStroke(dp(5), BG);
+        bg.setStroke(dp(6), BG);
         bg.setColor(ACCENT);
         avatarIv.setBackground(bg);
         avatarIv.setClipToOutline(true);
@@ -372,19 +381,13 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
     }
 
     private View buildCopyButton() {
-        Button b = new Button(activity);
-        b.setText("Copy user ID");
-        b.setAllCaps(false);
-        b.setTextColor(ACCENT);
-        b.setTextSize(13);
-        b.setTypeface(Typeface.MONOSPACE);
+        TextView b = a.b.util.Ui.text(activity, "Copy user ID", 0xFFFFFFFF, 14);
+        b.setTypeface(null, Typeface.BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setClickable(true);
+        b.setBackground(a.b.util.Ui.ripple(a.b.util.Ui.rounded(ACCENT, dp(8)), dp(8)));
         
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(COPY_BG);
-        bg.setCornerRadius(dp(6));
-        b.setBackground(bg);
-        
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
         lp.setMargins(0, dp(12), 0, 0);
         b.setLayoutParams(lp);
         

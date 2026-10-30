@@ -31,7 +31,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.*;
-import a.b.BuildConfig;
 import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.*;
@@ -45,10 +44,11 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     private static final int MATCH = -1, WRAP = -2;
     private static final String USER_AGENT = "Discord-Android/347012";
     private static final String CDN = "https://cdn.discordapp.com/";
-    private static final int MENTION_FG = 0xFF5865F2, MENTION_BG = 0x4D5865F2;
+    private static final int MENTION_FG = 0xFFC9CDFB, MENTION_BG = 0x4D5865F2;
     private static final int EVERYONE_FG = 0xFFFEE75C, EVERYONE_BG = 0x4DFEE75C;
-    private static final int PANEL = 0xFF2B2D31, EMBED_BG = 0xFF101010;
+    private static final int PANEL = 0xFF1E1F22, EMBED_BG = 0xFF2B2D31;
     private static final int TEXT = 0xFFDBDEE1, MUTED = 0xFF949BA4, LINK_FG = 0xFF00A8FC;
+    private static final int BG = 0xFF313338, HIGHLIGHT_BG = 0x1AF0B232;
 
     private static final Pattern CUSTOM_EMOJI = Pattern.compile("<a?:\\w+:(\\d+)>");
     private static final Pattern USER_MENTION = Pattern.compile("<@!?(\\d+)>");
@@ -83,6 +83,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     MainActivity activity;
+    public javax.crypto.SecretKey keyOverride;
     List<Message> messages;
     private List<Message> displayList = new ArrayList<>();
     ImageLoader imageLoader;
@@ -120,6 +121,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     final Set<String> loadingEmojis = syncSet();
     final Set<String> failedVideoLoads = syncSet();
     final Set<String> failedImageLoads = syncSet();
+    final Set<String> pendingMemberFetches = syncSet();
+    final Set<String> checkedMembers = syncSet();
     final Set<String> pendingUserFetches = syncSet();
     final Set<String> failedUserFetches = syncSet();
     final Set<String> pendingChannelFetches = syncSet();
@@ -142,6 +145,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             final Context ctx = activity.getApplicationContext();
             emojiExecutor.execute(() -> cleanDiskCache(ctx));
         }
+    }
+
+    private javax.crypto.SecretKey key() {
+        return keyOverride != null ? keyOverride : (activity != null ? activity.e2eeKey : null);
     }
 
     public void setLongPressListener(MessageLongPressListener l) { longPressListener = l; }
@@ -204,21 +211,43 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
 
     private void bindHeader(MessageViewHolder h, Message msg, boolean show) {
         h.header.setVisibility(show ? View.VISIBLE : View.GONE);
+        h.avatar.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        ViewGroup.LayoutParams alp = h.avatar.getLayoutParams();
+        if (alp instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) alp;
+            int wantH = show ? avatarSize : 0;
+            int wantTop = show ? dp(2) : 0;
+            if (mlp.height != wantH || mlp.topMargin != wantTop) {
+                mlp.height = wantH;
+                mlp.topMargin = wantTop;
+                h.avatar.setLayoutParams(mlp);
+            }
+        }
+        h.root.setPadding(dp(12), show ? dp(10) : 0, dp(12), dp(2));
         if (!show) return;
         h.name.setText(displayName(msg));
         h.name.setTextColor(getAuthorColor(msg));
-        
-        String timeStr = TimeUtils.relativeTime(msg.timestamp);
+
+        String timeStr = TimeUtils.messageTime(msg.timestamp);
         h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
 
         String uid = msg.author != null ? msg.author.id : null;
-        h.avatar.setImageDrawable(null);
-        if (activity != null && imageLoader != null && !BuildConfig.SKIP_IMAGES && msg.author != null && isReal(msg.author.avatar)) {
-            imageLoader.load(CDN + "avatars/" + uid + "/" + msg.author.avatar + ".png?size=128", h.avatar);
+        h.avatar.setBackground(Ui.oval(Ui.avatarColor(uid)));
+        h.avatar.setClipToOutline(true);
+        boolean hasAvatar = activity != null && imageLoader != null && msg.author != null && isReal(msg.author.avatar);
+        if (imageLoader != null) {
+            imageLoader.load(hasAvatar ? CDN + "avatars/" + uid + "/" + msg.author.avatar + ".png?size=128" : null, h.avatar);
         }
         View.OnClickListener open = v -> openProfile(uid);
         h.avatar.setOnClickListener(open);
         h.name.setOnClickListener(open);
+    }
+
+    private boolean mentionsSelf(Message msg) {
+        String self = activity != null ? activity.selfId() : null;
+        if (self == null || msg == null) return false;
+        if (msg.author != null && self.equals(msg.author.id)) return false;
+        return msg.mentionedUserIds != null && msg.mentionedUserIds.contains(self);
     }
 
     private int getAuthorColor(Message msg) {
@@ -255,8 +284,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                       isReal(nick) ? nick :
                       message.author == null ? "System" :
                       isReal(message.author.globalName) ? message.author.globalName : message.author.username;
-        if (activity != null && message.author != null && message.author.id != null && name != null && activity.userNameCache != null) {
-            activity.userNameCache.put(message.author.id, name);
+        if (activity != null && message.author != null && message.author.id != null && activity.userNameCache != null) {
+            String global = message.author == null ? null
+                : isReal(message.author.globalName) ? message.author.globalName : message.author.username;
+            if (isReal(global)) activity.userNameCache.put(message.author.id, global);
         }
         return name;
     }
@@ -398,6 +429,12 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private String resolveUser(String id, Message msg) {
+        if (guildId != null && activity != null) {
+            String nick = activity.userNickCache.get(guildId + "_" + id);
+            if (!isReal(nick) && msg.author != null && id.equals(msg.author.id) && isReal(msg.memberNick)) nick = msg.memberNick;
+            if (isReal(nick)) return nick;
+            requestMember(id);
+        }
         String name = msg.mentionedUsers != null ? msg.mentionedUsers.get(id) : null;
         if (!isReal(name) && activity != null && activity.userNameCache != null) name = activity.userNameCache.get(id);
         if (isReal(name)) return name;
@@ -410,6 +447,28 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         if (isReal(name)) return name;
         requestChannelName(id);
         return "unknown-channel";
+    }
+
+    private void requestMember(final String id) {
+        if (guildId == null || activity == null || activity.apiClient == null) return;
+        final String key = guildId + "_" + id;
+        if (checkedMembers.contains(key) || !pendingMemberFetches.add(key)) return;
+        final String gid = guildId;
+        activity.apiClient.fetchMember(gid, id, new ApiClient.Callback<org.json.JSONObject>() {
+            @Override public void onSuccess(org.json.JSONObject member) {
+                pendingMemberFetches.remove(key);
+                checkedMembers.add(key);
+                if (activity == null) return;
+                String nick = member.isNull("nick") ? null : member.optString("nick", null);
+                boolean has = isReal(nick);
+                if (has) activity.userNickCache.put(key, nick);
+                if (has) ui.post(() -> { invalidateMentions(id, true); refreshUser(id); });
+            }
+            @Override public void onError(String err) {
+                pendingMemberFetches.remove(key);
+                checkedMembers.add(key);
+            }
+        });
     }
 
     private void requestUserName(String id) {
@@ -527,7 +586,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
 
     private View attachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
         if (isEncryptedAttachment(a)) {
-            if (activity == null || activity.e2eeKey == null) {
+            if (activity == null || key() == null) {
                 TextView t = tv("\uD83D\uDD12 " + a.filename + " (encrypted - key missing)", MUTED, 14);
                 t.setPadding(dp(4), dp(4), dp(4), dp(4));
                 return t;
@@ -602,7 +661,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private void loadEncryptedVideo(String url, ViewGroup parent, EncryptedVideoCallback onDone) {
-        if (url == null || activity == null || activity.e2eeKey == null) {
+        if (url == null || activity == null || key() == null) {
             onDone.onResult(null, null);
             return;
         }
@@ -619,7 +678,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             return;
         }
 
-        final javax.crypto.SecretKey key = activity.e2eeKey;
+        final javax.crypto.SecretKey key = key();
 
         emojiExecutor.execute(() -> {
             if (diskFile != null && diskFile.exists() && diskFile.length() > 0) {
@@ -803,7 +862,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private void loadEncryptedBitmap(String url, ViewGroup parent, EncryptedBitmapCallback onDone) {
-        if (url == null || activity == null || activity.e2eeKey == null) {
+        if (url == null || activity == null || key() == null) {
             onDone.onResult(null, null, 0, 0);
             return;
         }
@@ -823,7 +882,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         if (pw <= 0 && activity != null) pw = activity.getResources().getDisplayMetrics().widthPixels;
         final int targetW = Math.max(pw > 0 ? pw - dp(112) : dp(248), dp(120));
         final int targetH = dp(400);
-        final javax.crypto.SecretKey key = activity.e2eeKey;
+        final javax.crypto.SecretKey key = key();
 
         emojiExecutor.execute(() -> {
             Bitmap result = null;
@@ -992,7 +1051,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private View media(String preview, boolean crop, String openUrl, boolean video, int[] size) {
-        boolean show = preview != null && imageLoader != null && !BuildConfig.SKIP_IMAGES;
+        boolean show = preview != null && imageLoader != null;
         FrameLayout frame = new FrameLayout(activity);
         frame.setLayoutParams(lp(size[0], size[1], 0, dp(4), 0, dp(4)));
         frame.setBackgroundColor(show ? Color.BLACK : EMBED_BG);
@@ -1146,63 +1205,56 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             super(new LinearLayout(activity));
             root = (LinearLayout) itemView;
             root.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
-            root.setOrientation(VERTICAL);
-            root.setBackgroundColor(Color.BLACK);
-            root.setPadding(dp(10), dp(2), dp(10), dp(2));
+            root.setOrientation(HORIZONTAL);
+            root.setBackgroundColor(BG);
+            root.setPadding(dp(12), dp(10), dp(12), 0);
             root.setOnLongClickListener(this);
+
+            avatar = new ImageView(activity);
+            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            avatar.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
+            avatar.setClipToOutline(true);
+            root.addView(avatar, lp(avatarSize, avatarSize, 0, dp(2), dp(12), 0));
+
+            body = new LinearLayout(activity);
+            body.setOrientation(VERTICAL);
 
             header = new LinearLayout(activity);
             header.setOrientation(HORIZONTAL);
             header.setGravity(Gravity.CENTER_VERTICAL);
-            header.setPadding(0, dp(12), 0, dp(2));
-            
-            avatar = new ImageView(activity);
-            GradientDrawable round = new GradientDrawable();
-            round.setCornerRadius(avatarSize / 2f);
-            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            avatar.setBackground(round);
-            avatar.setClipToOutline(true);
 
             name = new TextView(activity);
             name.setTextColor(Color.WHITE);
             name.setTypeface(null, Typeface.BOLD);
-            name.setTextSize(15);
+            name.setTextSize(16);
             name.setSingleLine();
             name.setEllipsize(TextUtils.TruncateAt.END);
-            name.setGravity(Gravity.START);
-            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-            name.setMaxWidth((int) (screenWidth * 0.7f));
+            name.setMaxWidth((int) (activity.getResources().getDisplayMetrics().widthPixels * 0.6f));
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(WRAP, WRAP);
+            nameLp.setMarginEnd(dp(8));
 
             time = new TextView(activity);
             time.setTextColor(MUTED);
             time.setTextSize(12);
-            time.setGravity(Gravity.START);
+            time.setSingleLine();
 
-            View spacer = new View(activity);
-            spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
-            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(WRAP, WRAP);
-            nameLp.setMarginEnd(dp(8));
-            name.setLayoutParams(nameLp);
-
-            header.addView(avatar, lp(avatarSize, avatarSize, 0, 0, dp(12), 0));
-            header.addView(name);
+            header.addView(name, nameLp);
             header.addView(time);
-            header.addView(spacer);
 
             reply = new TextView(activity);
             reply.setTextColor(MUTED);
             reply.setTextSize(12);
             reply.setSingleLine();
             reply.setEllipsize(TextUtils.TruncateAt.END);
-            reply.setPadding(0, dp(2), 0, dp(2));
+            reply.setPadding(0, 0, 0, dp(2));
             reply.setVisibility(View.GONE);
 
             content = new TextView(activity);
             content.setTextColor(TEXT);
-            content.setTextSize(15);
+            content.setTextSize(16);
             content.setLinkTextColor(LINK_FG);
             content.setMovementMethod(LinkMovementMethod.getInstance());
-            content.setLineSpacing(0, 1.2f);
+            content.setLineSpacing(0, 1.12f);
             content.setOnLongClickListener(this);
 
             attachments = new LinearLayout(activity);
@@ -1210,24 +1262,21 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             embeds = new LinearLayout(activity);
             embeds.setOrientation(VERTICAL);
 
-            body = new LinearLayout(activity);
-            body.setOrientation(VERTICAL);
-            body.setPaddingRelative(bodyIndent, 0, 0, 0);
+            body.addView(header);
             body.addView(reply);
             body.addView(content);
             body.addView(attachments);
             body.addView(embeds);
-
-            root.addView(header);
-            root.addView(body);
+            root.addView(body, new LinearLayout.LayoutParams(0, WRAP, 1f));
         }
 
         void bind(Message msg, int pos) {
             boolean showHeader = pos == 0 || !sameGroup(displayList.get(pos - 1), msg);
             bindHeader(this, msg, showHeader);
+            root.setBackgroundColor(mentionsSelf(msg) ? 0xFF3A3A33 : BG);
             CharSequence text;
 
-            if (msg.encrypted && (activity == null || activity.e2eeKey == null)) {
+            if (msg.encrypted && (activity == null || key() == null)) {
                 text = "\uD83D\uDD12 Encrypted message (key missing)";
             } else {
                 if (msg.id == null) {

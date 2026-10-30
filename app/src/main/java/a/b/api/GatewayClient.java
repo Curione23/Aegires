@@ -67,6 +67,7 @@ public class GatewayClient extends WebSocketListener {
     private volatile boolean ready;
     private volatile String subscribedGuild, subscribedChannel;
     private volatile String pendingGuild, pendingChannel;
+    private final java.util.concurrent.atomic.AtomicInteger socketGen = new java.util.concurrent.atomic.AtomicInteger();
     private final Runnable reconnectRunnable = this::doConnect;
 
     public GatewayClient(String rawToken, int intents, Handler handler, Listener listener) {
@@ -86,6 +87,7 @@ public class GatewayClient extends WebSocketListener {
     public void shutdown() {
         shouldConnect = false;
         running = false;
+        socketGen.incrementAndGet();
         if (handler != null) handler.removeCallbacks(reconnectRunnable);
         if (webSocket != null) {
             webSocket.close(1000, "shutdown");
@@ -101,11 +103,21 @@ public class GatewayClient extends WebSocketListener {
         attempt++;
         zlib.end();
         stopHeartbeat();
+        WebSocket old = webSocket;
+        final int gen = socketGen.incrementAndGet();
+        if (old != null) { try { old.cancel(); } catch (Exception ignored) {} }
         String url = (resumeUrl != null) ? resumeUrl : DEFAULT_URL;
         Request request = new Request.Builder().url(url)
             .header("User-Agent", SuperProperties.USER_AGENT)
             .header("X-Super-Properties", SuperProperties.getBase64()).build();
-        webSocket = httpClient.newWebSocket(request, this);
+        webSocket = httpClient.newWebSocket(request, new WebSocketListener() {
+            private boolean live() { return gen == socketGen.get(); }
+            @Override public void onOpen(WebSocket ws, Response r) { if (live()) GatewayClient.this.onOpen(ws, r); }
+            @Override public void onMessage(WebSocket ws, String t) { if (live()) GatewayClient.this.onMessage(ws, t); }
+            @Override public void onMessage(WebSocket ws, ByteString b) { if (live()) GatewayClient.this.onMessage(ws, b); }
+            @Override public void onClosing(WebSocket ws, int c, String r) { if (live()) GatewayClient.this.onClosing(ws, c, r); }
+            @Override public void onFailure(WebSocket ws, Throwable t, Response r) { if (live()) GatewayClient.this.onFailure(ws, t, r); }
+        });
     }
 
     private void scheduleReconnect(String reason) {

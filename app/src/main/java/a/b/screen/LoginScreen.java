@@ -1,96 +1,94 @@
 package a.b.screen;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.*;
-import android.content.Intent;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import a.b.MainActivity;
 import a.b.util.TokenStore;
+import a.b.util.Ui;
 
 public class LoginScreen implements Screen {
     MainActivity activity;
     View view;
-    float density;
 
     @Override
     public View onCreateView(final MainActivity activity, ViewGroup parent) {
         this.activity = activity;
-        this.density = activity.getResources().getDisplayMetrics().density;
 
         FrameLayout root = new FrameLayout(activity);
-        root.setBackgroundColor(0xFF000000);
+        root.setBackgroundColor(Ui.BG);
 
         LinearLayout form = new LinearLayout(activity);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setGravity(Gravity.CENTER_HORIZONTAL);
-        
-        FrameLayout.LayoutParams formLp = new FrameLayout.LayoutParams(dp(320), ViewGroup.LayoutParams.WRAP_CONTENT);
-        formLp.gravity = Gravity.CENTER;
+        FrameLayout.LayoutParams formLp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
         formLp.leftMargin = dp(24);
         formLp.rightMargin = dp(24);
         form.setLayoutParams(formLp);
 
-        TextView header = new TextView(activity);
-        header.setText("Aegires");
-        header.setTextSize(26);
-        header.setTextColor(Color.WHITE);
+        TextView header = Ui.text(activity, "Aegires", Ui.TEXT_HEADER, 28);
         header.setTypeface(null, Typeface.BOLD);
         header.setGravity(Gravity.CENTER);
-        header.setPadding(0, 0, 0, dp(32));
         form.addView(header);
 
+        TextView sub = Ui.text(activity, "Paste your token to continue", Ui.MUTED, 14);
+        sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(6), 0, dp(28));
+        form.addView(sub);
+
+        TextView label = Ui.sectionLabel(activity, "Token");
+        label.setPadding(dp(2), 0, 0, dp(6));
+        form.addView(label, new LinearLayout.LayoutParams(-1, -2));
+
         final EditText tokenInput = new EditText(activity);
-        tokenInput.setHint("Enter Token");
-        tokenInput.setHintTextColor(0xFF72767D);
-        tokenInput.setTextColor(Color.WHITE);
+        tokenInput.setHint("Token");
+        tokenInput.setHintTextColor(Ui.MUTED);
+        tokenInput.setTextColor(Ui.TEXT);
         tokenInput.setTextSize(15);
-        tokenInput.setPadding(dp(16), dp(14), dp(16), dp(14));
-        
-        GradientDrawable inputBg = new GradientDrawable();
-        inputBg.setColor(0xFF1E1F22);
-        inputBg.setCornerRadius(dp(8));
-        tokenInput.setBackground(inputBg);
-        
+        tokenInput.setSingleLine(true);
+        tokenInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        tokenInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        tokenInput.setPadding(dp(14), dp(14), dp(14), dp(14));
+        tokenInput.setBackground(Ui.rounded(Ui.BG_TERTIARY, dp(8)));
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(-1, -2);
         inputLp.bottomMargin = dp(16);
-        tokenInput.setLayoutParams(inputLp);
-        form.addView(tokenInput);
+        form.addView(tokenInput, inputLp);
 
-        Button connectBtn = new Button(activity);
-        connectBtn.setText("CONNECT");
-        connectBtn.setTextColor(Color.WHITE);
-        connectBtn.setTextSize(14);
-        connectBtn.setTypeface(null, Typeface.BOLD);
-        connectBtn.setAllCaps(false);
-        
-        GradientDrawable btnBg = new GradientDrawable();
-        btnBg.setColor(0xFF5865F2);
-        btnBg.setCornerRadius(dp(8));
-        connectBtn.setBackground(btnBg);
-        
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, dp(48));
-        connectBtn.setLayoutParams(btnLp);
-        
-        connectBtn.setOnClickListener(v -> {
+        final TextView connect = Ui.primaryButton(activity, "Log in");
+        form.addView(connect, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        final Runnable submit = () -> {
             String token = tokenInput.getText().toString().trim();
-            if (!token.isEmpty()) {
-                activity.token = token;
-                activity.setToken(token);
-                TokenStore.save(activity, token);
-                activity.resetTo(new GuildListScreen());
+            if (token.length() > 1 && (token.startsWith("\"") && token.endsWith("\""))) {
+                token = token.substring(1, token.length() - 1).trim();
             }
+            if (token.isEmpty()) {
+                tokenInput.setError("Enter a token");
+                return;
+            }
+            TokenStore.save(activity, token);
+            activity.setToken(token);
+            activity.resetTo(new GuildListScreen());
+        };
+        connect.setOnClickListener(v -> submit.run());
+        tokenInput.setOnEditorActionListener((v, actionId, e) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) { submit.run(); return true; }
+            return false;
         });
-        form.addView(connectBtn);
         root.addView(form);
-
         return view = root;
     }
 
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) { return Ui.dp(activity, v); }
 
     @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
     @Override public View getView() { return view; }

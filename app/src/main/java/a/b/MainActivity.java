@@ -15,6 +15,10 @@ import a.b.api.ApiClient;
 import a.b.api.GatewayClient;
 import a.b.screen.*;
 import a.b.util.ImageLoader;
+import a.b.util.DiskCache;
+import a.b.util.MentionStore;
+import a.b.util.Ui;
+import a.b.model.MentionItem;
 import a.b.util.PermissionUtil;
 import a.b.util.TokenStore;
 import java.util.List;
@@ -35,9 +39,10 @@ public class MainActivity extends Activity {
     public String userId;
     public javax.crypto.SecretKey e2eeKey;
     public boolean e2eeEnabled;
-    public String uploadHost = "discord";
     private static final long HEAP_REPORT_MS = 30000L;
     public GatewayClient gateway;
+    public MentionStore mentions;
+    public DiskCache diskCache;
     public String selfUserId;
     public boolean gatewayConnected;
     public ConcurrentHashMap<String, String> userNameCache = new ConcurrentHashMap<>();
@@ -58,7 +63,9 @@ public class MainActivity extends Activity {
         getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         
         rootFrame = new FrameLayout(this);
-        rootFrame.setBackgroundColor(0xFF000000);
+        rootFrame.setBackgroundColor(Ui.BG_TERTIARY);
+        getWindow().setStatusBarColor(Ui.BG_TERTIARY);
+        getWindow().setNavigationBarColor(Ui.BG_TERTIARY);
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootFrame, (v, windowInsets) -> {
             androidx.core.graphics.Insets bars = windowInsets.getInsets(
                     androidx.core.view.WindowInsetsCompat.Type.systemBars() | androidx.core.view.WindowInsetsCompat.Type.displayCutout());
@@ -70,6 +77,8 @@ public class MainActivity extends Activity {
 
         apiClient = new ApiClient(handler);
         imageLoader = new ImageLoader();
+        mentions = new MentionStore(this);
+        diskCache = new DiskCache(this);
 
         String saved = TokenStore.load(this);
         if (saved != null) {
@@ -83,6 +92,7 @@ public class MainActivity extends Activity {
     public void setToken(String token) {
         this.token = token;
         this.userId = PermissionUtil.getUserIdFromToken(token);
+        diskCache.setAccount(userId);
         apiClient.setToken(token);
         startGateway();
     }
@@ -100,6 +110,7 @@ public class MainActivity extends Activity {
                 JSONObject u = ready.optJSONObject("user");
                 if (u != null) selfUserId = u.optString("id", null);
                 gatewayConnected = true;
+                refreshMentions();
                 for (Screen s : screenStack.toArray(new Screen[0])) {
                     if (s instanceof MessageListScreen) ((MessageListScreen) s).onGatewayReady();
                 }
@@ -107,6 +118,11 @@ public class MainActivity extends Activity {
 
             @Override public void onDispatch(String type, JSONObject d) {
                 if (d != null) invalidateCaches(type, d);
+                if (d != null && "MESSAGE_CREATE".equals(type)) {
+                    mentions.onMessageCreate(d, selfId(), currentChannelId());
+                } else if (d != null && "MESSAGE_DELETE".equals(type)) {
+                    mentions.remove(d.optString("id", ""));
+                }
                 for (Screen s : screenStack.toArray(new Screen[0])) {
                     if (s instanceof MessageListScreen) ((MessageListScreen) s).onGatewayEvent(type, d);
                 }
@@ -125,9 +141,16 @@ public class MainActivity extends Activity {
                     guildInfoCache.remove(guildId);
                     return;
                 }
-                if ("GUILD_CREATE".equals(type) || "GUILD_DELETE".equals(type)) {
+                if ("GUILD_CREATE".equals(type)) {
                     channelCache.remove(guildId);
                     guildCache.clear();
+                    return;
+                }
+                if ("GUILD_DELETE".equals(type)) {
+                    channelCache.remove(guildId);
+                    diskCache.deleteChannels(guildId);
+                    guildCache.clear();
+                    diskCache.deleteGuilds();
                     return;
                 }
                 if ("GUILD_MEMBER_UPDATE".equals(type)) {
@@ -143,6 +166,23 @@ public class MainActivity extends Activity {
             }
         });
         gateway.connect();
+    }
+
+    public String selfId() { return selfUserId != null ? selfUserId : userId; }
+
+    public String currentChannelId() {
+        if (!screenStack.isEmpty() && screenStack.peek() instanceof MessageListScreen) {
+            return ((MessageListScreen) screenStack.peek()).getChannelId();
+        }
+        return null;
+    }
+
+    public void refreshMentions() {
+        if (apiClient == null || apiClient.isBotAccount()) return;
+        apiClient.fetchMentions(new ApiClient.Callback<List<MentionItem>>() {
+            @Override public void onSuccess(List<MentionItem> result) { mentions.mergeRemote(result); }
+            @Override public void onError(String msg) {}
+        });
     }
 
     public void logout() {
@@ -163,6 +203,9 @@ public class MainActivity extends Activity {
         channelNameCache.clear();
         roleCache.clear();
         userNickCache.clear();
+        mentions.clear();
+        diskCache.clearAll();
+        diskCache.setAccount(null);
         
         apiClient = new ApiClient(handler);
         token = null;

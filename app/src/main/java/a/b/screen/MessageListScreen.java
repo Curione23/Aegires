@@ -31,11 +31,14 @@ import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.Message;
 import a.b.util.Crypto;
+import a.b.util.FileNames;
+import a.b.util.ForcedKeys;
+import a.b.util.Ui;
 
 public class MessageListScreen implements Screen {
-    private static final int DARK = 0xFF101010, REPLY_BAR_BG = 0xFF1E1F22;
-    private static final int HINT = 0xFF949BA4, TEXT = 0xFFDBDEE1;
-    private static final int TYPING_BG = 0xFF000000;
+    private static final int DARK = Ui.BG_TERTIARY, REPLY_BAR_BG = Ui.BG_SECONDARY;
+    private static final int HINT = Ui.MUTED, TEXT = Ui.TEXT;
+    private static final int TYPING_BG = Ui.BG;
     private static final int PICK_IMAGE_REQUEST = 1001;
     private static final int MAX_MESSAGES = 1000;
     private static final int PAGE_SIZE = 30;
@@ -65,7 +68,9 @@ public class MessageListScreen implements Screen {
     private RecyclerView messageList;
     private LinearLayoutManager layoutManager;
     private EditText input;
-    private TextView attachIcon, replyText, channelNameTv, typingText, e2eePill;
+    private ImageView attachIcon, sendIcon;
+    private TextView replyText, channelNameTv, typingText, e2eePill, attachText;
+    private LinearLayout attachBar;
     private LinearLayout replyBar;
     private LoadingAdapter loadingAdapter;
     private boolean loadingNew, loadingOld, allLoaded, sending;
@@ -79,6 +84,8 @@ public class MessageListScreen implements Screen {
         typingUsers.clear();
         updateTypingIndicator();
     };
+    private boolean forced;
+    private javax.crypto.SecretKey forcedKey;
     private int pendingImageWidth = 0;
     private int pendingImageHeight = 0;
 
@@ -90,13 +97,17 @@ public class MessageListScreen implements Screen {
     @Override
     public View onCreateView(MainActivity activity, ViewGroup parent) {
         this.activity = activity;
+        forced = ForcedKeys.isForced(channelId);
+        forcedKey = forced ? ForcedKeys.keyFor(channelId) : null;
         density = activity.getResources().getDisplayMetrics().density;
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Ui.BG);
         root.addView(buildHeader());
         root.addView(buildList(), new LinearLayout.LayoutParams(MATCH, 0, 1f));
         root.addView(buildTypingIndicator());
         root.addView(buildReplyBar());
+        root.addView(buildAttachBar());
         root.addView(buildInputPill());
         
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root, (v, windowInsets) -> {
@@ -107,42 +118,55 @@ public class MessageListScreen implements Screen {
             return windowInsets;
         });
         
-        subscribeAndLoad();
+        adapter.keyOverride = forcedKey;
+        activity.mentions.markChannelRead(channelId);
+        if (forced && forcedKey == null) {
+            ForcedKeys.prepare(channelId, k -> {
+                if (activity == null) return;
+                forcedKey = k;
+                adapter.keyOverride = k;
+                if (k == null) activity.toast("Couldn't derive this channel's key");
+                subscribeAndLoad();
+            });
+        } else {
+            subscribeAndLoad();
+        }
         return view = root;
     }
 
     private View buildHeader() {
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(16), dp(12), dp(16), dp(12));
-        header.setBackgroundColor(DARK);
+        Ui.AppBar bar = new Ui.AppBar(activity, "Loading\u2026", Ui.BG, activity::goBack);
+        channelNameTv = bar.title;
+        channelNameTv.setTextSize(16);
+        TextView hash = text(guildId == null ? "@" : HASH_GLYPH, HINT, 22);
+        hash.setTypeface(null, Typeface.BOLD);
+        hash.setPadding(dp(4), 0, dp(6), 0);
+        bar.bar.addView(hash, 1);
 
-        TextView icon = text(HASH_GLYPH, HINT, 20);
-        icon.setTypeface(null, Typeface.BOLD);
-        icon.setPadding(0, 0, dp(8), 0);
-        header.addView(icon);
-
-        channelNameTv = text("Loading...", Color.WHITE, 16);
-        channelNameTv.setTypeface(null, Typeface.BOLD);
-        channelNameTv.setSingleLine(true);
-        channelNameTv.setEllipsize(TextUtils.TruncateAt.END);
-        header.addView(channelNameTv, new LinearLayout.LayoutParams(0, WRAP, 1f));
-
-        // E2EE Header Pill (Hidden if no key is set, toggles encryption when tapped)
         e2eePill = text("", Color.WHITE, 12);
         e2eePill.setTypeface(null, Typeface.BOLD);
-        e2eePill.setPadding(dp(8), dp(4), dp(8), dp(4));
+        e2eePill.setGravity(Gravity.CENTER_VERTICAL);
+        e2eePill.setPadding(dp(10), dp(5), dp(10), dp(5));
+        e2eePill.setCompoundDrawablePadding(dp(4));
         e2eePill.setOnClickListener(v -> toggleEncryption());
-        updateE2eePillState();
-
         LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(WRAP, WRAP);
-        header.addView(e2eePill, pillLp);
+        pillLp.setMarginEnd(dp(8));
+        bar.actions.addView(e2eePill, pillLp);
+        updateE2eePillState();
+        return bar.view;
+    }
 
-        return header;
+    private javax.crypto.SecretKey key() {
+        if (forced) return forcedKey;
+        return activity != null ? activity.e2eeKey : null;
+    }
+
+    private boolean encOn() {
+        return forced || (activity != null && activity.e2eeEnabled);
     }
 
     private void toggleEncryption() {
-        if (activity == null || activity.e2eeKey == null) return;
+        if (forced || activity == null || activity.e2eeKey == null) return;
         activity.e2eeEnabled = !activity.e2eeEnabled;
         updateE2eePillState();
         if (input != null) {
@@ -153,36 +177,29 @@ public class MessageListScreen implements Screen {
 
     private void updateE2eePillState() {
         if (activity == null || e2eePill == null) return;
-        if (activity.e2eeKey == null) {
+        if (forced || activity.e2eeKey == null) {
             e2eePill.setVisibility(View.GONE);
             return;
         }
-
         e2eePill.setVisibility(View.VISIBLE);
         boolean active = activity.e2eeEnabled;
-        
-        GradientDrawable pillBg = new GradientDrawable();
-        pillBg.setCornerRadius(dp(12));
-        
-        if (active) {
-            pillBg.setColor(0x335865F2); // Subtle blurple accent
-            pillBg.setStroke(dp(1), 0xFF5865F2);
-            e2eePill.setText("\uD83D\uDD12 E2EE");
-            e2eePill.setTextColor(Color.WHITE);
-        } else {
-            pillBg.setColor(0xFF1E1F22);
-            pillBg.setStroke(dp(1), 0xFF2B2D31);
-            e2eePill.setText("\uD83D\uDD13 OFF");
-            e2eePill.setTextColor(HINT);
-        }
+        GradientDrawable pillBg = rounded(active ? 0x335865F2 : Ui.BG_SECONDARY, 12);
+        pillBg.setStroke(dp(1), active ? Ui.BLURPLE : Ui.DIVIDER);
+        int color = active ? Color.WHITE : HINT;
+        Ui.Icon lock = new Ui.Icon(Ui.I_LOCK, color);
+        lock.setBounds(0, 0, dp(12), dp(12));
+        e2eePill.setCompoundDrawables(lock, null, null, null);
+        e2eePill.setText(active ? "E2EE" : "OFF");
+        e2eePill.setTextColor(color);
         e2eePill.setBackground(pillBg);
     }
 
     private View buildTypingIndicator() {
         typingText = text("", HINT, 12);
-        typingText.setPadding(dp(16), dp(4), dp(16), dp(4));
+        typingText.setPadding(dp(16), dp(2), dp(16), dp(2));
         typingText.setBackgroundColor(TYPING_BG);
-        typingText.setLayoutParams(new LinearLayout.LayoutParams(MATCH, dp(24)));
+        typingText.setGravity(Gravity.CENTER_VERTICAL);
+        typingText.setLayoutParams(new LinearLayout.LayoutParams(MATCH, dp(20)));
         typingText.setVisibility(View.INVISIBLE);
         return typingText;
     }
@@ -191,7 +208,7 @@ public class MessageListScreen implements Screen {
         layoutManager = new LinearLayoutManager(activity);
         messageList = new RecyclerView(activity);
         messageList.setLayoutManager(layoutManager);
-        messageList.setBackgroundColor(Color.BLACK);
+        messageList.setBackgroundColor(Ui.BG);
         messageList.setItemAnimator(null);
         adapter = new MessageAdapter(activity, messages, activity.imageLoader, guildId);
         adapter.setLongPressListener(this::onMessageLongPress);
@@ -211,58 +228,123 @@ public class MessageListScreen implements Screen {
     }
 
     private View buildReplyBar() {
-        replyText = text("", HINT, 12);
+        replyText = text("", HINT, 13);
         replyText.setSingleLine();
         replyText.setEllipsize(TextUtils.TruncateAt.END);
-        
-        TextView cancel = text(CANCEL_GLYPH, HINT, 16);
-        cancel.setPadding(dp(12), 0, dp(4), 0);
+
+        FrameLayout cancel = Ui.iconButton(activity, Ui.I_CLOSE, HINT);
+        cancel.setLayoutParams(new LinearLayout.LayoutParams(dp(36), dp(36)));
         cancel.setOnClickListener(v -> cancelReply());
-        
+
         replyBar = new LinearLayout(activity);
         replyBar.setGravity(Gravity.CENTER_VERTICAL);
-        replyBar.setPadding(dp(14), dp(8), dp(10), dp(8));
-        replyBar.setBackground(rounded(REPLY_BAR_BG, 10));
+        replyBar.setPadding(dp(16), dp(2), dp(8), dp(2));
+        replyBar.setBackgroundColor(Ui.BG_SECONDARY);
         replyBar.setVisibility(View.GONE);
         replyBar.addView(replyText, new LinearLayout.LayoutParams(0, WRAP, 1f));
         replyBar.addView(cancel);
-        
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
-        lp.setMargins(dp(16), dp(8), dp(16), 0);
-        replyBar.setLayoutParams(lp);
+        replyBar.setLayoutParams(new LinearLayout.LayoutParams(MATCH, WRAP));
         return replyBar;
     }
 
+    private View buildAttachBar() {
+        attachText = text("", Ui.TEXT, 13);
+        attachText.setSingleLine();
+        attachText.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+
+        FrameLayout cancel = Ui.iconButton(activity, Ui.I_CLOSE, HINT);
+        cancel.setLayoutParams(new LinearLayout.LayoutParams(dp(36), dp(36)));
+        cancel.setOnClickListener(v -> clearAttachment());
+
+        attachBar = new LinearLayout(activity);
+        attachBar.setGravity(Gravity.CENTER_VERTICAL);
+        attachBar.setPadding(dp(16), dp(2), dp(8), dp(2));
+        attachBar.setBackgroundColor(Ui.BG_SECONDARY);
+        attachBar.setVisibility(View.GONE);
+        ImageView clip = Ui.iconView(activity, Ui.I_ATTACH, HINT, 16);
+        LinearLayout.LayoutParams clipLp = new LinearLayout.LayoutParams(dp(16), dp(16));
+        clipLp.setMarginEnd(dp(8));
+        attachBar.addView(clip, clipLp);
+        attachBar.addView(attachText, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        attachBar.addView(cancel);
+        attachBar.setLayoutParams(new LinearLayout.LayoutParams(MATCH, WRAP));
+        return attachBar;
+    }
+
+    private void showAttachment() {
+        if (attachBar == null) return;
+        boolean has = pendingFileUri != null;
+        attachBar.setVisibility(has ? View.VISIBLE : View.GONE);
+        if (has) attachText.setText(pendingFileName != null ? pendingFileName : "attachment");
+        updateSendState();
+    }
+
+    private void clearAttachment() {
+        pendingFileUri = null;
+        pendingFileName = null;
+        pendingMimeType = null;
+        pendingImageWidth = 0;
+        pendingImageHeight = 0;
+        showAttachment();
+    }
+
+    private void setAttachCancel(boolean cancel) {
+        attachIcon.setImageDrawable(new Ui.Icon(cancel ? Ui.I_CLOSE : Ui.I_PLUS, HINT));
+    }
+
+    private void updateSendState() {
+        if (sendIcon == null || input == null) return;
+        boolean can = input.getText().toString().trim().length() > 0 || (editingId == null && pendingFileUri != null);
+        sendIcon.setImageDrawable(new Ui.Icon(Ui.I_SEND, can ? Ui.BLURPLE : HINT));
+    }
+
     private View buildInputPill() {
-        attachIcon = text(ATTACH_GLYPH, HINT, 18);
-        attachIcon.setPadding(dp(12), dp(8), dp(8), dp(8));
+        attachIcon = new ImageView(activity);
+        attachIcon.setPadding(dp(10), dp(10), dp(10), dp(10));
+        attachIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        attachIcon.setBackground(Ui.ripple(null, -1));
+        attachIcon.setClickable(true);
+        setAttachCancel(false);
         attachIcon.setOnClickListener(v -> {
             if (editingId != null) cancelEdit();
             else pickImage();
         });
-        
+
         input = new EditText(activity);
-        input.setHint(activity.e2eeEnabled ? HINT_ENCRYPTED : HINT_MESSAGE);
+        input.setHint(encOn() ? HINT_ENCRYPTED : HINT_MESSAGE);
         input.setHintTextColor(HINT);
         input.setTextColor(TEXT);
-        input.setTextSize(15);
+        input.setTextSize(16);
         input.setBackgroundColor(Color.TRANSPARENT);
-        input.setPadding(0, dp(12), 0, dp(12));
-        
-        TextView send = text(SEND_GLYPH, HINT, 18);
-        send.setPadding(dp(12), dp(8), dp(12), dp(8));
-        send.setOnClickListener(v -> sendMessage());
-        
+        input.setPadding(dp(4), dp(10), dp(4), dp(10));
+        input.setMaxLines(6);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+            | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable e) { updateSendState(); }
+        });
+
+        sendIcon = new ImageView(activity);
+        sendIcon.setPadding(dp(10), dp(10), dp(10), dp(10));
+        sendIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        sendIcon.setBackground(Ui.ripple(null, -1));
+        sendIcon.setClickable(true);
+        sendIcon.setOnClickListener(v -> sendMessage());
+        updateSendState();
+
         LinearLayout pill = new LinearLayout(activity);
         pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setPadding(dp(16), dp(2), dp(8), dp(2));
-        pill.setBackground(rounded(DARK, 12));
+        pill.setPadding(dp(4), 0, dp(4), 0);
+        pill.setBackground(rounded(Ui.BG_INPUT, 22));
         pill.addView(attachIcon);
         pill.addView(input, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        pill.addView(send);
-        
+        pill.addView(sendIcon);
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
-        lp.setMargins(dp(16), dp(8), dp(16), dp(16));
+        lp.setMargins(dp(10), dp(6), dp(10), dp(10));
         pill.setLayoutParams(lp);
         return pill;
     }
@@ -512,16 +594,16 @@ public class MessageListScreen implements Screen {
     }
 
     private String prepareOutgoingText(String plain) {
-        if (!activity.e2eeEnabled) return plain;
-        if (activity.e2eeKey == null) {
-            activity.toast("Encryption key missing");
+        if (!encOn()) return plain;
+        if (key() == null) {
+            activity.toast(forced ? "Encryption key not ready yet" : "Encryption key missing");
             return null;
         }
         if (plain.length() > Crypto.MAX_PLAINTEXT_LEN) {
             activity.toast("Too long for encryption (max " + Crypto.MAX_PLAINTEXT_LEN + ")");
             return null;
         }
-        String out = Crypto.encrypt(plain, activity.e2eeKey);
+        String out = Crypto.encrypt(plain, key());
         if (out == null) activity.toast("Encryption failed");
         return out;
     }
@@ -529,16 +611,16 @@ public class MessageListScreen implements Screen {
     private static final java.util.regex.Pattern SIZE_TAG_PATTERN = java.util.regex.Pattern.compile("^\\[sz:(\\d+),(\\d+)\\]");
 
     private void decryptMessageInPlace(Message m) {
-        if (m == null || activity == null || activity.e2eeKey == null) return;
+        if (m == null || activity == null || key() == null) return;
         if (Crypto.looksEncrypted(m.content)) {
-            String plain = Crypto.decrypt(m.content, activity.e2eeKey);
+            String plain = Crypto.decrypt(m.content, key());
             if (plain != null) {
                 m.content = plain;
                 extractAndCleanDimensions(m);
             }
         }
         if (Crypto.looksEncrypted(m.replyToContent)) {
-            String plain = Crypto.decrypt(m.replyToContent, activity.e2eeKey);
+            String plain = Crypto.decrypt(m.replyToContent, key());
             if (plain != null) {
                 m.replyToContent = plain;
                 cleanReplyDimensions(m);
@@ -573,6 +655,7 @@ public class MessageListScreen implements Screen {
 
     private void sendMessage() {
         if (sending || activity == null || activity.apiClient == null) return;
+        if (forced && forcedKey == null) { activity.toast("Encryption key not ready yet"); return; }
         String text = input.getText().toString().trim();
         boolean hasFile = editingId == null && pendingFileUri != null;
         if (text.isEmpty() && !hasFile) return;
@@ -592,22 +675,16 @@ public class MessageListScreen implements Screen {
                 cancelEdit();
             }));
         } else if (hasFile) {
-            Runnable clearAttachment = () -> {
-                pendingFileUri = null;
-                pendingFileName = null;
-                pendingMimeType = null;
-                pendingImageWidth = 0;
-                pendingImageHeight = 0;
-            };
+            Runnable clearAttachment = this::clearAttachment;
             String payloadText = text;
-            if (activity.e2eeEnabled && activity.e2eeKey != null && pendingImageWidth > 0 && pendingImageHeight > 0) {
+            if (encOn() && key() != null && pendingImageWidth > 0 && pendingImageHeight > 0) {
                 payloadText = "[sz:" + pendingImageWidth + "," + pendingImageHeight + "]" + text;
             }
             String outText = prepareOutgoingText(payloadText);
             if (outText == null) { sending = false; return; }
-            if (activity.e2eeEnabled && activity.e2eeKey != null) {
+            if (encOn() && key() != null) {
                 String encName = encryptedFileName(pendingFileName);
-                api.sendEncryptedFile(activity, channelId, outText, pendingFileUri, encName, activity.e2eeKey, done("Upload failed: ", text, clearAttachment));
+                api.sendEncryptedFile(activity, channelId, outText, pendingFileUri, encName, key(), done("Upload failed: ", text, clearAttachment));
             } else {
                 api.sendFile(activity, channelId, outText, pendingFileUri, pendingMimeType, pendingFileName, done("Upload failed: ", text, clearAttachment));
             }
@@ -642,9 +719,6 @@ public class MessageListScreen implements Screen {
             }
             @Override public void onError(String err) {
                 sending = false;
-                pendingFileUri = null;
-                pendingFileName = null;
-                pendingMimeType = null;
                 if (activity == null) return;
                 activity.toast(failPrefix + err);
                 if (input.getText().length() == 0) {
@@ -676,8 +750,8 @@ public class MessageListScreen implements Screen {
         ContentResolver cr = activity.getContentResolver();
         String mime = cr.getType(uri);
         pendingFileUri = uri;
-        pendingFileName = fileName(cr, uri);
         pendingMimeType = mime != null ? mime : "application/octet-stream";
+        pendingFileName = FileNames.randomFor(fileName(cr, uri), pendingMimeType);
 
         pendingImageWidth = 0;
         pendingImageHeight = 0;
@@ -715,7 +789,7 @@ public class MessageListScreen implements Screen {
             } catch (Exception ignored) {}
         }
 
-        activity.toast("File attached: " + pendingFileName);
+        showAttachment();
     }
 
     private static String fileName(ContentResolver cr, Uri uri) {
@@ -751,7 +825,7 @@ public class MessageListScreen implements Screen {
         input.setSelection(content.length());
         input.setHint(HINT_EDIT);
         input.requestFocus();
-        attachIcon.setText(CANCEL_GLYPH);
+        setAttachCancel(true);
         InputMethodManager imm = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
         imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
         int i = indexOf(msg.id);
@@ -761,8 +835,8 @@ public class MessageListScreen implements Screen {
     private void cancelEdit() {
         editingId = null;
         input.setText("");
-        input.setHint(activity.e2eeEnabled ? HINT_ENCRYPTED : HINT_MESSAGE);
-        attachIcon.setText(ATTACH_GLYPH);
+        input.setHint(encOn() ? HINT_ENCRYPTED : HINT_MESSAGE);
+        setAttachCancel(false);
     }
 
     private String nameOf(Message m) {
@@ -829,19 +903,48 @@ public class MessageListScreen implements Screen {
     private void handleTypingStart(JSONObject d) {
         String userId = d.optString("user_id", null);
         if (userId == null || userId.equals(activity.selfUserId)) return;
-        String name = null;
+        String nick = null;
+        String globalName = null;
         JSONObject member = d.optJSONObject("member");
         if (member != null) {
+            if (!member.isNull("nick")) nick = member.optString("nick", null);
             JSONObject user = member.optJSONObject("user");
-            if (user != null) name = user.optString("global_name", user.optString("username", null));
-            if (name == null && member.has("nick")) name = member.optString("nick");
+            if (user != null) {
+                String g = user.isNull("global_name") ? null : user.optString("global_name", null);
+                globalName = isReal(g) ? g : user.optString("username", null);
+            }
         }
-        if (name == null) name = activity.userNameCache.get(userId);
-        if (name == null) name = "Someone";
+        if (!isReal(nick) && guildId != null) nick = activity.userNickCache.get(guildId + "_" + userId);
+        String name = isReal(nick) ? nick
+                    : isReal(globalName) ? globalName
+                    : activity.userNameCache.get(userId);
+        if (!isReal(name)) name = "Someone";
+        if (!isReal(nick)) lookupTypingNick(userId);
         typingUsers.put(userId, name);
         updateTypingIndicator();
         typingHandler.removeCallbacks(clearTypingRunnable);
         typingHandler.postDelayed(clearTypingRunnable, TYPING_EXPIRY_MS);
+    }
+
+    private final java.util.Set<String> typingNickChecked = new java.util.HashSet<>();
+
+    private void lookupTypingNick(final String userId) {
+        if (guildId == null || activity == null || activity.apiClient == null) return;
+        final String key = guildId + "_" + userId;
+        if (!typingNickChecked.add(key)) return;
+        activity.apiClient.fetchMember(guildId, userId, new ApiClient.Callback<JSONObject>() {
+            @Override public void onSuccess(JSONObject member) {
+                if (activity == null) return;
+                String nick = member.isNull("nick") ? null : member.optString("nick", null);
+                if (!isReal(nick)) return;
+                activity.userNickCache.put(key, nick);
+                if (typingUsers.containsKey(userId)) {
+                    typingUsers.put(userId, nick);
+                    updateTypingIndicator();
+                }
+            }
+            @Override public void onError(String err) {}
+        });
     }
 
     private void updateTypingIndicator() {
@@ -923,6 +1026,8 @@ public class MessageListScreen implements Screen {
             adapter.emojiExecutor.shutdownNow();
         }
     }
+
+    public String getChannelId() { return channelId; }
 
     @Override public View getView() { return view; }
 

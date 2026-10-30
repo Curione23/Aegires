@@ -22,7 +22,6 @@ public class DiscordUser {
 
     public int mutualGuildsCount;
 
-    // Derived from the snowflake id, always populated.
     public long createdAtMs;
 
     public DiscordUser(String id, String username, String globalName,
@@ -36,10 +35,6 @@ public class DiscordUser {
         this.createdAtMs = snowflakeToMillis(id);
     }
 
-    /**
-     * Parses either a flat user object (/users/{id}) or a profile envelope
-     * (/users/{id}/profile) — the profile response nests the user under "user".
-     */
     public static DiscordUser fromJson(JSONObject o) throws Exception {
         JSONObject user = o.has("user") ? o.getJSONObject("user") : o;
         JSONObject profile = o.optJSONObject("user_profile");
@@ -48,7 +43,6 @@ public class DiscordUser {
         String username = user.getString("username");
         String globalName = user.isNull("global_name") ? null : user.optString("global_name", null);
 
-        // Banner can live on the user object OR inside user_profile.
         String banner = null;
         if (!user.isNull("banner")) banner = user.optString("banner", null);
         if (banner == null && profile != null && !profile.isNull("banner")) {

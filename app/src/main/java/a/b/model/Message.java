@@ -68,6 +68,11 @@ public class Message {
       String globalName = mention.isNull("global_name") ? null : mention.optString("global_name", null);
       String display = (globalName != null && globalName.length() > 0 && !"null".equals(globalName))
           ? globalName : username;
+      JSONObject mem = mention.optJSONObject("member");
+      if (mem != null && !mem.isNull("nick")) {
+        String nick = mem.optString("nick", null);
+        if (nick != null && nick.length() > 0 && !"null".equals(nick)) display = nick;
+      }
       msg.mentionedUserIds.add(id);
       msg.mentionedUsers.put(id, display);
     }
@@ -183,6 +188,10 @@ public class Message {
     if (other.replyToAuthorName != null) this.replyToAuthorName = other.replyToAuthorName;
     if (other.replyToContent != null) this.replyToContent = other.replyToContent;
     if (other.replyToMissing) this.replyToMissing = true;
+  }
+
+  public static boolean isRealName(String s) {
+    return s != null && s.length() > 0 && !"null".equals(s);
   }
 
   private static long extractTimestamp(String snowflake) {

@@ -27,6 +27,7 @@ import a.b.model.DiscordUser;
 import a.b.model.DmChannel;
 import a.b.model.Guild;
 import a.b.model.GuildInfo;
+import a.b.model.MentionItem;
 import a.b.model.Message;
 import a.b.model.Role;
 import a.b.util.PermissionUtil;
@@ -121,6 +122,14 @@ public class ApiClient {
             (before != null ? "&before=" + enc(before) : "") +
             (after != null ? "&after=" + enc(after) : "");
         get(path, json -> list(json, Message::fromJson, "fetchMessages"), cb);
+    }
+
+    public void fetchMentions(Callback<List<MentionItem>> cb) {
+        get("/users/@me/mentions?limit=50&roles=true&everyone=true", json -> list(json, MentionItem::fromJson, "fetchMentions"), cb);
+    }
+
+    public void fetchChannelMeta(String channelId, Callback<JSONObject> cb) {
+        get("/channels/" + enc(channelId), json -> new JSONObject(json), cb);
     }
 
     public void fetchChannelName(String channelId, Callback<String> cb) {

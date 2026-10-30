@@ -1,14 +1,19 @@
 package a.b.screen;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
-import android.util.TypedValue;
-import android.view.*;
-import android.widget.*;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -18,21 +23,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import android.content.Intent;
 import a.b.MainActivity;
+import a.b.api.ApiClient;
 import a.b.model.Channel;
 import a.b.model.Guild;
 import a.b.model.GuildInfo;
-import a.b.BuildConfig;
+import a.b.util.MentionStore;
+import a.b.util.Ui;
 
-public class ChannelListScreen implements Screen {
-    private static final int BG = 0xFF000000;
-    private static final int BANNER_PLACEHOLDER = 0xFF101010;
-    private static final int BANNER_SCRIM = 0x88000000;
-    private static final int TEXT_PRIMARY = 0xFFFFFFFF;
-    private static final int TEXT_MUTED = 0xFF949BA4;
-    private static final int CATEGORY_TEXT = 0xFF949BA4;
-
+public class ChannelListScreen implements Screen, MentionStore.Listener {
     private static final String PREFS_NAME = "channel_state";
     private static final String KEY_COLLAPSED = "collapsed_categories";
 
@@ -41,10 +40,12 @@ public class ChannelListScreen implements Screen {
     final String guildId;
     final boolean isOwner;
     View view;
+    Ui.AppBar bar;
     LinearLayout listContainer;
-    TextView countsView;
     float density;
-
+    private List<Channel> channels;
+    private String error;
+    private boolean refreshing, retried;
     private Set<String> collapsedCategories = new HashSet<>();
 
     public ChannelListScreen(Guild guild, boolean isOwner) {
@@ -57,202 +58,107 @@ public class ChannelListScreen implements Screen {
     public View onCreateView(final MainActivity activity, ViewGroup parent) {
         this.activity = activity;
         this.density = activity.getResources().getDisplayMetrics().density;
-
         loadCollapsedState();
+
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Ui.BG_SECONDARY);
+
+        bar = new Ui.AppBar(activity, guild.name, Ui.BG_SECONDARY, activity::goBack);
+        bar.title.setTextSize(16);
+        bar.bar.addView(buildGuildIcon(), 1);
+        root.addView(bar.view, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
-
         listContainer = new LinearLayout(activity);
         listContainer.setOrientation(LinearLayout.VERTICAL);
-        listContainer.setBackgroundColor(BG);
-        scroll.addView(listContainer);
+        listContainer.setPadding(0, dp(4), 0, dp(16));
+        scroll.addView(listContainer, new ViewGroup.LayoutParams(-1, -2));
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        listContainer.addView(buildGuildHeader());
-
-        final ProgressBar loader = new ProgressBar(activity);
-        loader.setIndeterminate(true);
-        LinearLayout.LayoutParams loaderLp = new LinearLayout.LayoutParams(-2, -2);
-        loaderLp.gravity = Gravity.CENTER_HORIZONTAL;
-        loaderLp.topMargin = dp(20);
-        listContainer.addView(loader, loaderLp);
-
-        loadGuildInfo(loader);
-        loadChannels(loader);
-
-        return view = scroll;
+        render();
+        loadGuildInfo();
+        loadChannels();
+        return view = root;
     }
-
-    // -------------------------------------------------------- Persistence Logic
 
     private void loadCollapsedState() {
         SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        Set<String> saved = prefs.getStringSet(KEY_COLLAPSED, new HashSet<>());
-        collapsedCategories = new HashSet<>(saved);
+        collapsedCategories = new HashSet<>(prefs.getStringSet(KEY_COLLAPSED, new HashSet<String>()));
     }
 
     private void saveCollapsedState() {
         if (activity == null) return;
-        SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        prefs.edit().putStringSet(KEY_COLLAPSED, new HashSet<>(collapsedCategories)).apply();
+        activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putStringSet(KEY_COLLAPSED, new HashSet<>(collapsedCategories)).apply();
     }
 
-    // ------------------------------------------------------------------ Loading
 
-    private void loadGuildInfo(final View loader) {
-        GuildInfo cachedInfo = activity.guildInfoCache.get(guildId);
-        if (cachedInfo != null) {
-            applyGuildInfo(cachedInfo);
-            return;
-        }
-        activity.apiClient.fetchGuildInfo(guildId, new a.b.api.ApiClient.Callback<GuildInfo>() {
+    private void loadGuildInfo() {
+        GuildInfo cached = activity.guildInfoCache.get(guildId);
+        if (cached != null) { applyGuildInfo(cached); return; }
+        activity.apiClient.fetchGuildInfo(guildId, new ApiClient.Callback<GuildInfo>() {
             @Override public void onSuccess(GuildInfo info) {
-                if (activity == null) return; // GUARD
+                if (activity == null) return;
                 activity.guildInfoCache.put(guildId, info);
                 applyGuildInfo(info);
             }
-            @Override public void onError(String err) {
-                if (activity == null) return;
-                if (countsView != null) countsView.setText("");
-            }
+            @Override public void onError(String err) {}
         });
     }
 
-    private void loadChannels(final View loader) {
+    private void loadChannels() {
         List<Channel> cached = activity.channelCache.get(guildId);
-        if (cached != null) {
-            listContainer.removeView(loader);
-            renderChannelTree(cached);
-            return;
-        }
-        
-        activity.apiClient.fetchChannels(guildId, isOwner, new a.b.api.ApiClient.Callback<List<Channel>>() {
-            @Override public void onSuccess(List<Channel> channels) {
-                if (activity == null || listContainer == null) return; // GUARD
-                activity.channelCache.put(guildId, channels);
-                listContainer.removeView(loader);
-                renderChannelTree(channels);
+        if (cached != null) { setChannels(cached); return; }
+        activity.diskCache.loadChannels(guildId, disk -> {
+            if (activity == null) return;
+            boolean stale = disk != null && channels == null;
+            if (stale) setChannels(disk);
+            fetchChannels(stale || channels != null);
+        });
+    }
+
+    private void fetchChannels(final boolean haveStale) {
+        if (refreshing || activity == null) return;
+        refreshing = true;
+        final MainActivity host = activity;
+        host.apiClient.fetchChannels(guildId, isOwner, new ApiClient.Callback<List<Channel>>() {
+            @Override public void onSuccess(List<Channel> result) {
+                refreshing = false;
+                if (result.isEmpty() && channels != null && !channels.isEmpty()) return;
+                host.channelCache.put(guildId, result);
+                host.diskCache.saveChannels(guildId, result);
+                if (activity == null) return;
+                setChannels(result);
             }
             @Override public void onError(String msg) {
-                if (activity == null) return; // GUARD
-                if (listContainer != null) listContainer.removeView(loader);
-                activity.toast("Failed to load channels: " + msg);
+                refreshing = false;
+                if (activity == null || haveStale) return;
+                if (!retried) {
+                    retried = true;
+                    host.handler.postDelayed(() -> {
+                        if (activity != null && channels == null) fetchChannels(false);
+                    }, 3000);
+                    return;
+                }
+                error = msg;
+                render();
             }
         });
     }
 
-    // ------------------------------------------------------------------ Header
-
-    private View buildGuildHeader() {
-        LinearLayout header = new LinearLayout(activity);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.addView(buildBanner());
-        header.addView(buildProfileRow());
-        return header;
-    }
-
-    private View buildBanner() {
-        FrameLayout bannerWrap = new FrameLayout(activity);
-        bannerWrap.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(120)));
-
-        ImageView banner = new ImageView(activity);
-        banner.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        banner.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        
-        if (!BuildConfig.SKIP_IMAGES && isReal(guild.banner)) {
-            activity.imageLoader.load(
-                    "https://cdn.discordapp.com/banners/" + guild.id + "/" + guild.banner + ".png?size=512",
-                    banner);
-        } else {
-            banner.setBackgroundColor(BANNER_PLACEHOLDER);
-        }
-        bannerWrap.addView(banner);
-
-        View overlay = new View(activity);
-        overlay.setBackgroundColor(BANNER_SCRIM);
-        overlay.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        bannerWrap.addView(overlay);
-
-        return bannerWrap;
-    }
-
-    private View buildProfileRow() {
-        LinearLayout profileRow = new LinearLayout(activity);
-        profileRow.setOrientation(LinearLayout.HORIZONTAL);
-        profileRow.setGravity(Gravity.CENTER_VERTICAL);
-        profileRow.setPadding(dp(20), dp(14), dp(20), dp(20));
-
-        int iconSize = dp(64);
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
-        iconLp.setMarginEnd(dp(16));
-
-        GradientDrawable iconBg = new GradientDrawable();
-        iconBg.setShape(GradientDrawable.OVAL);
-        iconBg.setColor(0xFF5865F2);
-
-        if (!BuildConfig.SKIP_IMAGES && isReal(guild.icon)) {
-            ImageView icon = new ImageView(activity);
-            icon.setLayoutParams(iconLp);
-            icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            icon.setBackground(iconBg);
-            icon.setClipToOutline(true);
-            activity.imageLoader.load(
-                    "https://cdn.discordapp.com/icons/" + guild.id + "/" + guild.icon + ".png?size=256",
-                    icon);
-            profileRow.addView(icon);
-        } else {
-            FrameLayout wrap = new FrameLayout(activity);
-            wrap.setLayoutParams(iconLp);
-            wrap.setBackground(iconBg);
-            wrap.setClipToOutline(true);
-            
-            TextView initial = new TextView(activity);
-            initial.setText(guild.name.substring(0, 1).toUpperCase(Locale.US));
-            initial.setTextColor(Color.WHITE);
-            initial.setTextSize(28);
-            initial.setTypeface(null, Typeface.BOLD);
-            initial.setGravity(Gravity.CENTER);
-            initial.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-            wrap.addView(initial);
-            profileRow.addView(wrap);
-        }
-
-        LinearLayout textCol = new LinearLayout(activity);
-        textCol.setOrientation(LinearLayout.VERTICAL);
-        textCol.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
-
-        TextView name = new TextView(activity);
-        name.setText(guild.name);
-        name.setTextColor(TEXT_PRIMARY);
-        name.setTextSize(20);
-        name.setTypeface(null, Typeface.BOLD);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        textCol.addView(name);
-
-        countsView = new TextView(activity);
-        countsView.setText("Loading...");
-        countsView.setTextColor(TEXT_MUTED);
-        countsView.setTextSize(13);
-        countsView.setPadding(0, dp(2), 0, 0);
-        textCol.addView(countsView);
-
-        profileRow.addView(textCol);
-        return profileRow;
+    private void setChannels(List<Channel> list) {
+        channels = list;
+        error = null;
+        for (Channel c : list) if (c.name != null) activity.channelNameCache.put(c.id, c.name);
+        render();
     }
 
     private void applyGuildInfo(GuildInfo info) {
-        if (countsView == null || info == null) return;
-        if (info.memberCount == 0 && info.onlineCount == 0) {
-            countsView.setText("");
-        } else {
-            countsView.setText(formatCounts(info.memberCount, info.onlineCount));
-        }
-    }
-
-    private String formatCounts(int members, int online) {
-        return formatNumber(members) + " members   •   " + formatNumber(online) + " online";
+        if (bar == null || info == null) return;
+        if (info.memberCount == 0 && info.onlineCount == 0) { bar.setSubtitle(null); return; }
+        bar.setSubtitle(formatNumber(info.memberCount) + " members \u00B7 " + formatNumber(info.onlineCount) + " online");
     }
 
     private static String formatNumber(int n) {
@@ -261,186 +167,194 @@ public class ChannelListScreen implements Screen {
         return String.format(Locale.US, "%.1fM", n / 1000000.0);
     }
 
-    // ------------------------------------------------------------ Channel Tree
 
-    private void renderChannelTree(List<Channel> channels) {
+    private View buildGuildIcon() {
+        FrameLayout wrap = new FrameLayout(activity);
+        boolean hasIcon = Ui.isReal(guild.icon);
+        wrap.setBackground(Ui.rounded(hasIcon ? Ui.BG_TERTIARY : Ui.avatarColor(guildId), dp(10)));
+        wrap.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        wrap.setClipToOutline(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(32), dp(32));
+        lp.setMarginEnd(dp(10));
+        wrap.setLayoutParams(lp);
+
+        String name = guild.name == null ? "" : guild.name.trim();
+        TextView initial = Ui.text(activity, name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US), Color.WHITE, 14);
+        initial.setTypeface(null, Typeface.BOLD);
+        initial.setGravity(Gravity.CENTER);
+        wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
+        if (hasIcon) {
+            ImageView icon = new ImageView(activity);
+            icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            activity.imageLoader.load("https://cdn.discordapp.com/icons/" + guild.id + "/" + guild.icon + ".png?size=64", icon);
+            wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
+        }
+        return wrap;
+    }
+
+
+    private void render() {
+        if (listContainer == null || activity == null) return;
+        listContainer.removeAllViews();
+        if (error != null) {
+            TextView t = Ui.emptyState(activity, "Couldn't load channels.\nTap to retry.");
+            t.setOnClickListener(v -> { error = null; retried = false; render(); loadChannels(); });
+            listContainer.addView(t);
+            return;
+        }
+        if (channels == null) { listContainer.addView(Ui.emptyState(activity, "Loading\u2026")); return; }
+        if (channels.isEmpty()) { listContainer.addView(Ui.emptyState(activity, "No channels you can see.")); return; }
+        renderChannelTree(channels);
+    }
+
+    private void renderChannelTree(List<Channel> all) {
         List<Channel> categories = new ArrayList<>();
         List<Channel> uncategorized = new ArrayList<>();
-        Map<String, List<Channel>> categoryChildren = new HashMap<>();
+        Map<String, List<Channel>> children = new HashMap<>();
 
-        for (Channel ch : channels) {
+        for (Channel ch : all) {
             if (ch.type == 4) {
                 categories.add(ch);
-                if (!categoryChildren.containsKey(ch.id)) {
-                    categoryChildren.put(ch.id, new ArrayList<Channel>());
-                }
-            } else {
-                String parent = ch.parent_id;
-                boolean hasParent = parent != null && parent.length() > 0 && !"null".equals(parent);
-                if (!hasParent) {
-                    uncategorized.add(ch);
-                } else {
-                    if (!categoryChildren.containsKey(parent)) {
-                        categoryChildren.put(parent, new ArrayList<Channel>());
-                    }
-                    categoryChildren.get(parent).add(ch);
-                }
+                if (!children.containsKey(ch.id)) children.put(ch.id, new ArrayList<Channel>());
             }
         }
-
-        Collections.sort(uncategorized, POSITION_COMPARATOR);
-        for (Channel ch : uncategorized) {
-            listContainer.addView(createChannelRow(ch));
+        for (Channel ch : all) {
+            if (ch.type == 4) continue;
+            String parent = ch.parent_id;
+            boolean hasParent = parent != null && parent.length() > 0 && !"null".equals(parent) && children.containsKey(parent);
+            if (!hasParent) uncategorized.add(ch);
+            else children.get(parent).add(ch);
         }
+
+        Collections.sort(uncategorized, CHANNEL_COMPARATOR);
+        for (Channel ch : uncategorized) listContainer.addView(createChannelRow(ch));
 
         Collections.sort(categories, POSITION_COMPARATOR);
         for (Channel cat : categories) {
-            List<Channel> children = categoryChildren.get(cat.id);
-            if (children == null || children.isEmpty()) continue;
-            Collections.sort(children, CHANNEL_COMPARATOR);
-            listContainer.addView(createCategoryDropdown(cat, children));
+            List<Channel> kids = children.get(cat.id);
+            if (kids == null || kids.isEmpty()) continue;
+            Collections.sort(kids, CHANNEL_COMPARATOR);
+            listContainer.addView(createCategory(cat, kids));
         }
     }
 
     private static final Comparator<Channel> POSITION_COMPARATOR = (a, b) -> Integer.compare(a.position, b.position);
-
     private static final Comparator<Channel> CHANNEL_COMPARATOR = (a, b) -> {
-        int ag = isVoiceLike(a.type) ? 1 : 0;
-        int bg = isVoiceLike(b.type) ? 1 : 0;
+        int ag = isVoiceLike(a.type) ? 1 : 0, bg = isVoiceLike(b.type) ? 1 : 0;
         if (ag != bg) return ag - bg;
         return Integer.compare(a.position, b.position);
     };
 
     private static boolean isVoiceLike(int type) { return type == 2 || type == 13; }
-    
-    private static boolean isTextLike(int type) {
-        return type == 0 || type == 2 || type == 5 || type == 13;
-    }
+    private static boolean isOpenable(int type) { return type == 0 || type == 2 || type == 5 || type == 13; }
 
-    // -------------------------------------------------------------------- Rows
+    private View createCategory(final Channel category, List<Channel> kids) {
+        LinearLayout layout = new LinearLayout(activity);
+        layout.setOrientation(LinearLayout.VERTICAL);
 
-    private void applySelectableBackground(View v) {
-        TypedValue outValue = new TypedValue();
-        if (activity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)) {
-            v.setBackgroundResource(outValue.resourceId);
-        }
-    }
+        LinearLayout header = new LinearLayout(activity);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(16), dp(16), dp(4));
+        header.setClickable(true);
 
-    private View createCategoryDropdown(final Channel category, List<Channel> children) {
-        LinearLayout categoryLayout = new LinearLayout(activity);
-        categoryLayout.setOrientation(LinearLayout.VERTICAL);
+        final ImageView arrow = Ui.iconView(activity, Ui.I_CHEVRON_DOWN, Ui.MUTED, 16);
+        header.addView(arrow);
+        TextView title = Ui.sectionLabel(activity, category.name);
+        title.setPadding(dp(2), 0, 0, 0);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        header.addView(title);
 
-        LinearLayout headerRow = new LinearLayout(activity);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setPadding(dp(20), dp(16), dp(20), dp(8));
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        applySelectableBackground(headerRow);
+        final LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        for (Channel ch : kids) box.addView(createChannelRow(ch));
 
-        final TextView arrow = new TextView(activity);
-        arrow.setTextColor(CATEGORY_TEXT);
-        arrow.setTextSize(10);
-        arrow.setPadding(0, 0, dp(8), 0);
+        final boolean collapsed = collapsedCategories.contains(category.id);
+        box.setVisibility(collapsed ? View.GONE : View.VISIBLE);
+        arrow.setRotation(collapsed ? -90f : 0f);
 
-        TextView title = new TextView(activity);
-        title.setText(category.name.toUpperCase(Locale.US));
-        title.setTextColor(CATEGORY_TEXT);
-        title.setTextSize(12);
-        title.setTypeface(null, Typeface.BOLD);
-
-        headerRow.addView(arrow);
-        headerRow.addView(title);
-
-        final LinearLayout childrenContainer = new LinearLayout(activity);
-        childrenContainer.setOrientation(LinearLayout.VERTICAL);
-        childrenContainer.setPadding(dp(16), 0, 0, 0); 
-
-        for (Channel ch : children) {
-            childrenContainer.addView(createChannelRow(ch));
-        }
-
-        final boolean isCollapsed = collapsedCategories.contains(category.id);
-        if (isCollapsed) {
-            childrenContainer.setVisibility(View.GONE);
-            arrow.setText("▶");
-        } else {
-            childrenContainer.setVisibility(View.VISIBLE);
-            arrow.setText("▼");
-        }
-
-        headerRow.setOnClickListener(v -> {
-            if (childrenContainer.getVisibility() == View.VISIBLE) {
-                childrenContainer.setVisibility(View.GONE);
-                arrow.setText("▶");
-                collapsedCategories.add(category.id);
-            } else {
-                childrenContainer.setVisibility(View.VISIBLE);
-                arrow.setText("▼");
-                collapsedCategories.remove(category.id);
-            }
+        header.setOnClickListener(v -> {
+            boolean show = box.getVisibility() != View.VISIBLE;
+            box.setVisibility(show ? View.VISIBLE : View.GONE);
+            arrow.setRotation(show ? 0f : -90f);
+            if (show) collapsedCategories.remove(category.id); else collapsedCategories.add(category.id);
             saveCollapsedState();
         });
 
-        categoryLayout.addView(headerRow);
-        categoryLayout.addView(childrenContainer);
-        return categoryLayout;
+        layout.addView(header);
+        layout.addView(box);
+        return layout;
     }
 
     private View createChannelRow(final Channel ch) {
-        TextView tv = new TextView(activity);
-        tv.setText(channelPrefix(ch.type) + ch.name);
-        tv.setTextColor(TEXT_MUTED);
-        tv.setTextSize(16);
-        tv.setTypeface(null, Typeface.BOLD);
-        tv.setPadding(dp(20), dp(12), dp(20), dp(12));
-        tv.setGravity(Gravity.CENTER_VERTICAL);
-        applySelectableBackground(tv);
+        int unread = activity.mentions.unreadForChannel(ch.id);
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), 0, dp(16), 0);
+        row.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(40)));
 
-        if (isTextLike(ch.type)) {
-            tv.setOnClickListener(v -> {
-                if (activity != null) {
-                    activity.navigate(new MessageListScreen(guildId, ch.id));
-                }
-            });
-        } else {
-            tv.setAlpha(0.6f);
+        TextView prefix = Ui.text(activity, channelPrefix(ch.type), Ui.MUTED, 18);
+        prefix.setGravity(Gravity.CENTER);
+        row.addView(prefix, new LinearLayout.LayoutParams(dp(24), -2));
+
+        TextView name = Ui.text(activity, ch.name, unread > 0 ? Ui.TEXT_HEADER : Ui.MUTED, 16);
+        name.setTypeface(null, unread > 0 ? Typeface.BOLD : Typeface.NORMAL);
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        nlp.setMarginStart(dp(8));
+        row.addView(name, nlp);
+
+        if (unread > 0) {
+            TextView badge = Ui.badge(activity);
+            Ui.setBadge(badge, unread);
+            row.addView(badge);
         }
 
-        return tv;
+        if (isOpenable(ch.type)) {
+            row.setClickable(true);
+            row.setBackground(Ui.ripple(null, 0));
+            row.setOnClickListener(v -> {
+                if (activity != null) activity.navigate(new MessageListScreen(guildId, ch.id));
+            });
+        } else {
+            row.setAlpha(0.5f);
+        }
+        return row;
     }
 
     private static String channelPrefix(int type) {
         switch (type) {
-            case 0:  return "# ";
-            case 2:  return "🔊 ";
-            case 5:  return "📢 ";
+            case 0:  return "#";
+            case 2:  return "\uD83D\uDD0A";
+            case 5:  return "\uD83D\uDCE2";
             case 10:
-            case 11: return "🧵 ";
-            case 12: return "🔒 ";
-            case 13: return "🎙️ ";
-            case 14: return "🧭 ";
-            case 15: return "🗄️ ";
-            case 16: return "🖼️ ";
-            default: return "❓ ";
+            case 11:
+            case 12: return "\u21B3";
+            case 13: return "\uD83C\uDF99";
+            case 15: return "\uD83D\uDDC4";
+            default: return "#";
         }
     }
 
-    // ----------------------------------------------------------------- Helpers
-
-    private static boolean isReal(String s) {
-        return s != null && !s.isEmpty() && !"null".equals(s);
-    }
+    @Override public void onMentionsChanged() { render(); }
 
     private int dp(int v) { return (int) (v * density); }
 
     @Override public View getView() { return view; }
     @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
-    @Override public void onResume() {}
-    @Override public void onPause() {}
-    
-    @Override 
-    public void onDestroy() { 
+    @Override public void onResume() {
+        if (activity == null) return;
+        activity.mentions.addListener(this);
+        List<Channel> cached = activity.channelCache.get(guildId);
+        if (cached == null && channels != null) fetchChannels(true);
+        render();
+    }
+    @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
+    @Override public void onDestroy() {
+        if (activity != null) activity.mentions.removeListener(this);
         activity = null;
         listContainer = null;
-        countsView = null;
+        bar = null;
     }
 }

@@ -1,7 +1,12 @@
 plugins {
     id 'com.android.application'
+    id 'org.ajoberstar.grgit' version '5.3.3'
 }
-
+// these are from MojoLauncher
+static def getDate() { return new Date().format('yyyyMMdd') }
+static def getDateSeconds() { if (System.getenv("GITHUB_ACTIONS") == "true") { return Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER")); } else { return 172005; } }
+def getVersionName = { def currentBranch = grgit.branch.current(); def latestCommit = grgit.log(maxCommits: 1); def dateToday = getDate(); if(currentBranch == null || latestCommit == null) { return "LOCAL-${dateToday}" }else { def branchName = currentBranch.getName(); def commitAbbreviation = latestCommit.abbreviatedId; return "${dateToday}-${commitAbbreviation}-${branchName}"; } }
+// 
 android {
     namespace 'a.b'
     compileSdk 33
@@ -10,27 +15,23 @@ android {
         applicationId "io.github.aegires"
         minSdk 24
         targetSdk 33
-        versionCode 1
-        versionName "pubRelease"
+        versionCode getDateSeconds()
+        versionName getVersionName()
         multiDexEnabled false
     }
-
-    packagingOptions {
-        dex {
-            useLegacyPackaging = true
+    
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk false
         }
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
-
-    buildFeatures {
-        buildConfig true
     }
 
     signingConfigs {
         debug {
-            storeFile rootProject.file('app/debug.keystore')
+            storeFile rootProject.file('config/debug.keystore')
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
@@ -38,28 +39,14 @@ android {
     }
 
     buildTypes {
-        release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "boolean", "SKIP_IMAGES", "false"
-        }
-        releaseNoImages {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "boolean", "SKIP_IMAGES", "true"
-        }
         debug {
             signingConfig signingConfigs.debug
-            buildConfigField "boolean", "SKIP_IMAGES", "false"
         }
         debugr8 {
             minifyEnabled true
             shrinkResources true
             signingConfig signingConfigs.debug
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "boolean", "SKIP_IMAGES", "false"
         }
     }
 

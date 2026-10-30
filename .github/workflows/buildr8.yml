@@ -27,8 +27,17 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebugr8
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v6
         with:
-          name: app-r8
-          path: app/build/outputs/apk/debugr8/app-debugr8.apk
+          name: apk-arm64-v8a
+          path: app/build/outputs/apk/debugr8/*arm64-v8a*.apk
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: apk-armeabi-v7a
+          path: app/build/outputs/apk/debugr8/*armeabi-v7a*.apk
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: apk-x86_64
+          path: app/build/outputs/apk/debugr8/*x86_64*.apk

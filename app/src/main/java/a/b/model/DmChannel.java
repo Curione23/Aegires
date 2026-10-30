@@ -14,6 +14,7 @@ public class DmChannel {
     public List<Recipient> recipients = new ArrayList<>();
     public String name;
     public String icon;
+    public String lastMessageId;
 
     public static class Recipient {
         public String id;
@@ -32,12 +33,17 @@ public class DmChannel {
         }
     }
 
+    private static String nn(JSONObject o, String k) {
+        return o.isNull(k) ? null : o.optString(k, null);
+    }
+
     public static DmChannel fromJson(JSONObject o) {
         DmChannel d = new DmChannel();
         d.id = o.optString("id", null);
         d.type = o.optInt("type", TYPE_DM);
-        d.name = o.optString("name", null);
-        d.icon = o.optString("icon", null);
+        d.name = nn(o, "name");
+        d.icon = nn(o, "icon");
+        d.lastMessageId = nn(o, "last_message_id");
         JSONArray arr = o.optJSONArray("recipients");
         if (arr != null) {
             for (int i = 0; i < arr.length(); i++) {
@@ -45,9 +51,9 @@ public class DmChannel {
                 if (u == null) continue;
                 Recipient r = new Recipient();
                 r.id = u.optString("id", null);
-                r.username = u.optString("username", null);
-                r.globalName = u.optString("global_name", null);
-                r.avatar = u.optString("avatar", null);
+                r.username = nn(u, "username");
+                r.globalName = nn(u, "global_name");
+                r.avatar = nn(u, "avatar");
                 d.recipients.add(r);
             }
         }

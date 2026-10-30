@@ -35,13 +35,19 @@ public final class ImageLoader {
     public long cacheMax() { return CACHE_BYTES; }
 
     private void enqueue(final String url, final ImageView imageView) {
-        if (url == null || imageView == null) return;
+        if (imageView == null) return;
+        if (url == null) {
+            imageView.setTag(null);
+            imageView.setImageDrawable(null);
+            return;
+        }
         imageView.setTag(url);
         Bitmap cached = cache.get(url);
         if (cached != null) {
             imageView.setImageBitmap(cached);
             return;
         }
+        imageView.setImageDrawable(null);
         final int targetW = resolveTarget(imageView, true);
         final int targetH = resolveTarget(imageView, false);
         executor.submit(() -> {
@@ -53,11 +59,19 @@ public final class ImageLoader {
     }
 
     private static Bitmap fetchAndDecode(String url, int targetW, int targetH) {
-        try (InputStream is = new URL(url).openStream()) {
-            byte[] data = readAll(is);
+        java.net.URLConnection conn = null;
+        try {
+            conn = new URL(url).openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("User-Agent", "Discord-Android/347012");
+            byte[] data;
+            try (InputStream is = conn.getInputStream()) { data = readAll(is); }
             return decodeSampled(data, targetW, targetH);
         } catch (Exception e) {
             return null;
+        } finally {
+            if (conn instanceof java.net.HttpURLConnection) ((java.net.HttpURLConnection) conn).disconnect();
         }
     }
 
