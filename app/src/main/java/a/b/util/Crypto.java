@@ -25,6 +25,7 @@ public final class Crypto {
     private static final byte FLAG_RAW = 0;
     private static final byte FLAG_GZIP = 1;
     public static final int MAX_PLAINTEXT_LEN = 1300;
+    private static final int MAX_DECOMPRESSED_BYTES = 1 << 20;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private Crypto() {}
@@ -125,6 +126,7 @@ public final class Crypto {
                 int n = inflater.inflate(buf);
                 if (n > 0) {
                     out.write(buf, 0, n);
+                    if (out.size() > MAX_DECOMPRESSED_BYTES) return null;
                 } else if (n == 0 && (inflater.needsDictionary() || inflater.finished() || inflater.needsInput())) {
                     break;
                 }

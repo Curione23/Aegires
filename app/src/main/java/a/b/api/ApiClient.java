@@ -238,11 +238,14 @@ public class ApiClient {
     public void sendFile(Context ctx, String channelId, String content, Uri fileUri, String mimeType, String fileName, Callback<Void> cb) {
         async("http.UPLOAD", () -> {
             if (fileSize(ctx, fileUri) > MAX_UPLOAD_BYTES) throw new IOException("File too large (max 25 MB)");
-            InputStream file = ctx.getContentResolver().openInputStream(fileUri);
-            if (file == null) throw new IOException("Could not open " + fileUri);
             RequestBody fileBody = new RequestBody() {
                 @Override public MediaType contentType() { return MediaType.parse(mimeType); }
-                @Override public void writeTo(okio.BufferedSink sink) throws IOException { sink.writeAll(okio.Okio.source(file)); }
+                @Override public void writeTo(okio.BufferedSink sink) throws IOException {
+                    try (InputStream in = ctx.getContentResolver().openInputStream(fileUri)) {
+                        if (in == null) throw new IOException("Could not open " + fileUri);
+                        sink.writeAll(okio.Okio.source(in));
+                    }
+                }
             };
             MultipartBody body = new MultipartBody.Builder().setType(MultipartBody.FORM)
                 .addFormDataPart("content", content).addFormDataPart("file", fileName, fileBody).build();

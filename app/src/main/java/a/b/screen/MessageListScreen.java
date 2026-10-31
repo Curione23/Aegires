@@ -76,6 +76,7 @@ public class MessageListScreen implements Screen {
     private boolean loadingNew, loadingOld, allLoaded, sending;
     private Uri pendingFileUri;
     private final Set<String> pendingNickFetches = new HashSet<>();
+    private final Set<String> memberChecked = new HashSet<>();
     private String pendingFileName, pendingMimeType;
     private String editingId, replyToId;
     private final Map<String, String> typingUsers = new HashMap<>();
@@ -122,10 +123,10 @@ public class MessageListScreen implements Screen {
         activity.mentions.markChannelRead(channelId);
         if (forced && forcedKey == null) {
             ForcedKeys.prepare(channelId, k -> {
-                if (activity == null) return;
+                if (this.activity == null) return;
                 forcedKey = k;
                 adapter.keyOverride = k;
-                if (k == null) activity.toast("Couldn't derive this channel's key");
+                if (k == null) this.activity.toast("Couldn't derive this channel's key");
                 subscribeAndLoad();
             });
         } else {
@@ -370,7 +371,9 @@ public class MessageListScreen implements Screen {
         subscribe();
         if (activity.apiClient == null) return;
         String cachedName = activity.channelNameCache.get(channelId);
-        if (cachedName != null) {
+        if (guildId == null) {
+            loadDmTitle();
+        } else if (cachedName != null) {
             channelNameTv.setText(cachedName);
         } else {
             activity.apiClient.fetchChannelName(channelId, new ApiClient.Callback<String>() {
@@ -399,6 +402,18 @@ public class MessageListScreen implements Screen {
         } else {
             loadNewMessages();
         }
+    }
+
+    private void loadDmTitle() {
+        activity.apiClient.fetchChannelMeta(channelId, new ApiClient.Callback<JSONObject>() {
+            @Override public void onSuccess(JSONObject meta) {
+                if (activity == null || channelNameTv == null) return;
+                channelNameTv.setText(a.b.model.DmChannel.fromJson(meta).displayName(activity.selfId()));
+            }
+            @Override public void onError(String err) {
+                if (channelNameTv != null) channelNameTv.setText("Direct message");
+            }
+        });
     }
 
     public void onGatewayReady() {
@@ -433,6 +448,7 @@ public class MessageListScreen implements Screen {
             @Override public void onError(String err) {
                 loadingNew = false;
                 updateLoadMoreButton();
+                if (activity != null && messages.isEmpty()) activity.toast("Couldn't load messages: " + err);
             }
         });
     }
@@ -471,11 +487,12 @@ public class MessageListScreen implements Screen {
             boolean hasNick = activity.userNickCache != null && activity.userNickCache.containsKey(cacheKey);
             if (hasRole && hasNick) continue;
             
-            if (!pendingNickFetches.add(userId)) continue;
+            if (memberChecked.contains(userId) || !pendingNickFetches.add(userId)) continue;
 
             activity.apiClient.fetchMember(guildId, userId, new ApiClient.Callback<JSONObject>() {
                 @Override public void onSuccess(JSONObject member) {
                     pendingNickFetches.remove(userId);
+                    memberChecked.add(userId);
                     if (activity == null) return;
                     boolean updated = false;
                     JSONArray rolesArr = member.optJSONArray("roles");
@@ -500,6 +517,7 @@ public class MessageListScreen implements Screen {
                 }
                 @Override public void onError(String err) {
                     pendingNickFetches.remove(userId);
+                    memberChecked.add(userId);
                 }
             });
         }
@@ -664,7 +682,7 @@ public class MessageListScreen implements Screen {
         ApiClient api = activity.apiClient;
         if (editingId != null) {
             String outText = prepareOutgoingText(text);
-            if (outText == null) { sending = false; return; }
+            if (outText == null) { restoreInput(text); return; }
             String id = editingId;
             api.editMessage(channelId, id, outText, done("Edit failed: ", text, () -> {
                 int i = indexOf(id);
@@ -681,7 +699,7 @@ public class MessageListScreen implements Screen {
                 payloadText = "[sz:" + pendingImageWidth + "," + pendingImageHeight + "]" + text;
             }
             String outText = prepareOutgoingText(payloadText);
-            if (outText == null) { sending = false; return; }
+            if (outText == null) { restoreInput(text); return; }
             if (encOn() && key() != null) {
                 String encName = encryptedFileName(pendingFileName);
                 api.sendEncryptedFile(activity, channelId, outText, pendingFileUri, encName, key(), done("Upload failed: ", text, clearAttachment));
@@ -690,7 +708,7 @@ public class MessageListScreen implements Screen {
             }
         } else {
             String outText = prepareOutgoingText(text);
-            if (outText == null) { sending = false; return; }
+            if (outText == null) { restoreInput(text); return; }
             if (replyToId != null) {
                 String replyId = replyToId;
                 api.sendMessage(channelId, outText, replyId, guildId, done("Send failed: ", text, () -> {
@@ -700,6 +718,13 @@ public class MessageListScreen implements Screen {
                 api.sendMessage(channelId, outText, done("Send failed: ", text, null));
             }
         }
+    }
+
+    private void restoreInput(String text) {
+        sending = false;
+        if (input == null) return;
+        input.setText(text);
+        input.setSelection(text.length());
     }
 
     private static String encryptedFileName(String original) {
@@ -858,7 +883,7 @@ public class MessageListScreen implements Screen {
 
     private void onMessageLongPress(Message msg, View anchor) {
         if (activity == null || msg == null) return;
-        boolean mine = activity.selfUserId != null && msg.author != null && activity.selfUserId.equals(msg.author.id);
+        boolean mine = activity.selfId() != null && msg.author != null && activity.selfId().equals(msg.author.id);
         boolean canManage = activity.apiClient != null && activity.apiClient.canManageMessages(channelId);
         PopupMenu menu = new PopupMenu(activity, anchor);
         menu.getMenu().add(0, MENU_REPLY, 0, "Reply");
@@ -902,7 +927,7 @@ public class MessageListScreen implements Screen {
 
     private void handleTypingStart(JSONObject d) {
         String userId = d.optString("user_id", null);
-        if (userId == null || userId.equals(activity.selfUserId)) return;
+        if (userId == null || userId.equals(activity.selfId())) return;
         String nick = null;
         String globalName = null;
         JSONObject member = d.optJSONObject("member");
@@ -984,7 +1009,7 @@ public class MessageListScreen implements Screen {
 
     private void gatewayCreate(Message m) {
         boolean stick = atBottom();
-        typingUsers.clear();
+        if (m != null && m.author != null && m.author.id != null) typingUsers.remove(m.author.id);
         updateTypingIndicator();
         if (merge(Collections.singletonList(m), false)) {
             adapter.submitList(new ArrayList<>(messages));

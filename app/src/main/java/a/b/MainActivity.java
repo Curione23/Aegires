@@ -91,7 +91,9 @@ public class MainActivity extends Activity {
 
     public void setToken(String token) {
         this.token = token;
-        this.userId = PermissionUtil.getUserIdFromToken(token);
+        String bare = token.trim();
+        int sp = bare.indexOf(' ');
+        this.userId = PermissionUtil.getUserIdFromToken(sp >= 0 ? bare.substring(sp + 1).trim() : bare);
         diskCache.setAccount(userId);
         apiClient.setToken(token);
         startGateway();
@@ -107,7 +109,7 @@ public class MainActivity extends Activity {
         
         gateway = apiClient.createGateway(intents, new GatewayClient.Listener() {
             @Override public void onReady(JSONObject ready) {
-                JSONObject u = ready.optJSONObject("user");
+                JSONObject u = ready != null ? ready.optJSONObject("user") : null;
                 if (u != null) selfUserId = u.optString("id", null);
                 gatewayConnected = true;
                 refreshMentions();
@@ -207,6 +209,7 @@ public class MainActivity extends Activity {
         diskCache.clearAll();
         diskCache.setAccount(null);
         
+        if (apiClient != null) apiClient.shutdown();
         apiClient = new ApiClient(handler);
         token = null;
         userId = null;

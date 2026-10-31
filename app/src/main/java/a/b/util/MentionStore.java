@@ -102,9 +102,15 @@ public final class MentionStore {
 
     public void mergeRemote(List<MentionItem> remote) {
         boolean changed = false;
+        if (lastRead == null && !remote.isEmpty()) {
+            String newest = remote.get(0).id;
+            for (MentionItem m : remote) if (compareIds(m.id, newest) > 0) newest = m.id;
+            lastRead = newest;
+            savePrefs();
+        }
         for (MentionItem m : remote) {
             if (contains(m.id)) continue;
-            m.unread = (lastRead == null || compareIds(m.id, lastRead) > 0) && !readIds.contains(m.id);
+            m.unread = compareIds(m.id, lastRead) > 0 && !readIds.contains(m.id);
             items.add(m);
             changed = true;
         }
