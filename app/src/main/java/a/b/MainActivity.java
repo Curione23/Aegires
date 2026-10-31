@@ -16,6 +16,7 @@ import a.b.api.GatewayClient;
 import a.b.screen.*;
 import a.b.util.ImageLoader;
 import a.b.util.DiskCache;
+import a.b.util.MemberListStore;
 import a.b.util.MentionStore;
 import a.b.util.Ui;
 import a.b.model.MentionItem;
@@ -42,6 +43,7 @@ public class MainActivity extends Activity {
     private static final long HEAP_REPORT_MS = 30000L;
     public GatewayClient gateway;
     public MentionStore mentions;
+    public MemberListStore memberList = new MemberListStore();
     public DiskCache diskCache;
     public String selfUserId;
     public boolean gatewayConnected;
@@ -120,7 +122,9 @@ public class MainActivity extends Activity {
 
             @Override public void onDispatch(String type, JSONObject d) {
                 if (d != null) invalidateCaches(type, d);
-                if (d != null && "MESSAGE_CREATE".equals(type)) {
+                if (d != null && "GUILD_MEMBER_LIST_UPDATE".equals(type)) {
+                    memberList.handle(d, userNickCache, userNameCache);
+                } else if (d != null && "MESSAGE_CREATE".equals(type)) {
                     mentions.onMessageCreate(d, selfId(), currentChannelId());
                 } else if (d != null && "MESSAGE_DELETE".equals(type)) {
                     mentions.remove(d.optString("id", ""));
@@ -206,6 +210,7 @@ public class MainActivity extends Activity {
         roleCache.clear();
         userNickCache.clear();
         mentions.clear();
+        memberList.clear();
         diskCache.clearAll();
         diskCache.setAccount(null);
         

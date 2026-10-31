@@ -154,6 +154,11 @@ public class MessageListScreen implements Screen {
         pillLp.setMarginEnd(dp(8));
         bar.actions.addView(e2eePill, pillLp);
         updateE2eePillState();
+        if (guildId != null) {
+            bar.addAction(Ui.I_PEOPLE, v -> {
+                if (activity != null) activity.navigate(new MemberListScreen(guildId, channelId));
+            });
+        }
         return bar.view;
     }
 
