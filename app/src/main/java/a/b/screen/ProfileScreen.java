@@ -1,47 +1,59 @@
 package a.b.screen;
 
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.text.TextUtils;
-import android.text.method.LinkMovementMethod;
-import android.view.*;
-import android.widget.*;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.text.SimpleDateFormat;
-import java.util.*;
 import a.b.MainActivity;
-import a.b.model.DiscordUser;
-import a.b.model.Role;
 import a.b.api.ApiClient;
+import a.b.model.DiscordUser;
+import a.b.model.Guild;
+import a.b.model.Role;
 import a.b.util.SimpleMarkdown;
+import a.b.util.Ui;
 
 public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
-    private static final int BG = 0xFF2B2D31;
-    private static final int BANNER_FALLBACK = 0xFF1E1F22;
-    private static final int CARD_BG = 0xFF1E1F22;
-    private static final int CARD_BORDER = 0xFF3F4147;
-    private static final int TEXT_PRIMARY = 0xFFFFFFFF;
-    private static final int TEXT_SECONDARY = 0xFFDBDEE1;
-    private static final int TEXT_MUTED = 0xFF949BA4;
-    private static final int ACCENT = 0xFF5865F2;
-    private static final int COPY_BG = 0xFF2B2D31;
+    private static final int PAGE_BG = Ui.BG_SECONDARY;
+    private static final int CARD_BG = Ui.BG_TERTIARY;
+    private static final int CHIP_BG = Ui.BG_TERTIARY;
+    private static final int BANNER_H = 120;
+    private static final int AVATAR = 88;
+    private static final int AVATAR_RING = 5;
 
     MainActivity activity;
     final String userId;
     final String guildId;
     View view;
-    float density;
-    ImageView bannerIv, avatarIv;
-    TextView globalNameTv, usernameTv, pronounsTv, bioTv, botTag;
-    LinearLayout aboutSection, detailsSection;
-    LinearLayout badgeSection, rolesSection;
-    LinearLayout badgesRow, rolesRow;
+
+    private ImageView bannerIv, avatarIv;
+    private TextView avatarInitial, nameTv, userLineTv, botTag;
+    private LinearLayout detailsSection, rolesSection, rolesRow, aboutCard;
+
+    private DiscordUser user;
+    private String nick;
+    private long joinedMs;
 
     public ProfileScreen(String userId, String guildId) {
         this.userId = userId;
@@ -51,196 +63,206 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
     @Override
     public View onCreateView(final MainActivity activity, ViewGroup parent) {
         this.activity = activity;
-        this.density = activity.getResources().getDisplayMetrics().density;
-        
+
+        FrameLayout frame = new FrameLayout(activity);
+        frame.setBackgroundColor(PAGE_BG);
+
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
-        
-        LinearLayout root = new LinearLayout(activity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(0, 0, 0, dp(24));
-        scroll.addView(root);
-        
-        root.addView(buildBanner());
-        root.addView(buildAvatar());
-        root.addView(buildNameBlock());
-        root.addView(buildBadgeSection());
-        root.addView(buildRolesSection());
-        root.addView(buildAboutSection());
-        root.addView(buildDetailsSection());
-        
-        activity.apiClient.fetchUserProfileFull(userId, this);
-        loadRoles();
-        FrameLayout frame = new FrameLayout(activity);
-        frame.setBackgroundColor(BG);
+        LinearLayout col = new LinearLayout(activity);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(0, 0, 0, dp(24));
+
+        col.addView(buildHeader());
+        col.addView(buildNameBlock());
+
+        detailsSection = section();
+        detailsSection.setVisibility(View.GONE);
+        col.addView(detailsSection, sectionLp());
+
+        aboutCard = new LinearLayout(activity);
+        aboutCard.setOrientation(LinearLayout.VERTICAL);
+        aboutCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        aboutCard.setBackground(Ui.rounded(CARD_BG, dp(12)));
+        aboutCard.setVisibility(View.GONE);
+        LinearLayout.LayoutParams aboutLp = new LinearLayout.LayoutParams(-1, -2);
+        aboutLp.setMargins(dp(16), dp(20), dp(16), 0);
+        col.addView(aboutCard, aboutLp);
+
+        rolesSection = section();
+        rolesSection.setVisibility(View.GONE);
+        rolesSection.addView(Ui.sectionLabel(activity, "Roles"));
+        rolesRow = new LinearLayout(activity);
+        rolesRow.setOrientation(LinearLayout.VERTICAL);
+        rolesRow.setPadding(0, dp(6), 0, 0);
+        rolesSection.addView(rolesRow);
+        col.addView(rolesSection, sectionLp());
+
+        scroll.addView(col, new ViewGroup.LayoutParams(-1, -2));
         frame.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout back = a.b.util.Ui.iconButton(activity, a.b.util.Ui.I_BACK, 0xFFFFFFFF);
-        back.setBackground(a.b.util.Ui.ripple(a.b.util.Ui.oval(0x99000000), -1));
+
+        FrameLayout back = Ui.iconButton(activity, Ui.I_BACK, 0xFFFFFFFF);
+        back.setBackground(Ui.ripple(Ui.oval(0x99000000), -1));
         FrameLayout.LayoutParams backLp = new FrameLayout.LayoutParams(dp(40), dp(40));
         backLp.setMargins(dp(8), dp(8), 0, 0);
         back.setOnClickListener(v -> { if (this.activity != null) this.activity.goBack(); });
         frame.addView(back, backLp);
+
+        FrameLayout copy = Ui.iconButton(activity, Ui.I_COPY, 0xFFFFFFFF);
+        copy.setBackground(Ui.ripple(Ui.oval(0x99000000), -1));
+        FrameLayout.LayoutParams copyLp = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP | Gravity.END);
+        copyLp.setMargins(0, dp(8), dp(8), 0);
+        copy.setOnClickListener(v -> copyId());
+        frame.addView(copy, copyLp);
+
+        String cached = activity.userNameCache.get(userId);
+        if (Ui.isReal(cached)) nameTv.setText(cached);
+
+        activity.apiClient.fetchUserProfileFull(userId, this);
+        loadMember();
         return view = frame;
     }
 
-    private View buildBanner() {
-        FrameLayout frame = new FrameLayout(activity);
-        frame.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(180)));
-        frame.setBackgroundColor(BANNER_FALLBACK);
-        
-        bannerIv = new ImageView(activity);
-        bannerIv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        bannerIv.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        frame.addView(bannerIv);
-        return frame;
+    private void copyId() {
+        if (activity == null) return;
+        ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        cm.setPrimaryClip(ClipData.newPlainText("user id", userId));
+        activity.toast("Copied user ID");
     }
 
-    private View buildAvatar() {
-        int size = dp(110);
-        FrameLayout frame = new FrameLayout(activity);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
-        lp.gravity = Gravity.CENTER_HORIZONTAL;
-        lp.topMargin = -size / 2;
-        frame.setLayoutParams(lp);
-        
+    private View buildHeader() {
+        FrameLayout header = new FrameLayout(activity);
+        header.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(BANNER_H + AVATAR / 2 + 4)));
+
+        bannerIv = new ImageView(activity);
+        bannerIv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        bannerIv.setBackgroundColor(Ui.avatarColor(userId));
+        header.addView(bannerIv, new FrameLayout.LayoutParams(-1, dp(BANNER_H)));
+
+        int outer = dp(AVATAR);
+        FrameLayout ring = new FrameLayout(activity);
+        ring.setBackground(Ui.oval(PAGE_BG));
+        ring.setPadding(dp(AVATAR_RING), dp(AVATAR_RING), dp(AVATAR_RING), dp(AVATAR_RING));
+        FrameLayout.LayoutParams ringLp = new FrameLayout.LayoutParams(outer, outer, Gravity.TOP | Gravity.START);
+        ringLp.leftMargin = dp(16);
+        ringLp.topMargin = dp(BANNER_H - AVATAR / 2);
+
+        FrameLayout inner = new FrameLayout(activity);
+        inner.setBackground(Ui.oval(Ui.avatarColor(userId)));
+        inner.setClipToOutline(true);
+        avatarInitial = Ui.text(activity, "", Color.WHITE, 30);
+        avatarInitial.setTypeface(null, Typeface.BOLD);
+        avatarInitial.setGravity(Gravity.CENTER);
+        inner.addView(avatarInitial, new FrameLayout.LayoutParams(-1, -1));
         avatarIv = new ImageView(activity);
         avatarIv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        avatarIv.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setStroke(dp(6), BG);
-        bg.setColor(ACCENT);
-        avatarIv.setBackground(bg);
-        avatarIv.setClipToOutline(true);
-        frame.addView(avatarIv);
-        return frame;
+        inner.addView(avatarIv, new FrameLayout.LayoutParams(-1, -1));
+        ring.addView(inner, new FrameLayout.LayoutParams(-1, -1));
+        header.addView(ring, ringLp);
+        return header;
     }
 
     private View buildNameBlock() {
         LinearLayout block = new LinearLayout(activity);
         block.setOrientation(LinearLayout.VERTICAL);
-        block.setGravity(Gravity.CENTER_HORIZONTAL);
-        block.setPadding(dp(24), dp(12), dp(24), 0);
-        
-        globalNameTv = new TextView(activity);
-        globalNameTv.setTextColor(TEXT_PRIMARY);
-        globalNameTv.setTextSize(22);
-        globalNameTv.setTypeface(null, Typeface.BOLD);
-        globalNameTv.setGravity(Gravity.CENTER_HORIZONTAL);
-        globalNameTv.setSingleLine(true);
-        globalNameTv.setEllipsize(TextUtils.TruncateAt.END);
-        block.addView(globalNameTv);
+        block.setPadding(dp(16), dp(4), dp(16), dp(4));
 
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_HORIZONTAL);
-        row.setPadding(0, dp(4), 0, 0);
+        row.setGravity(Gravity.CENTER_VERTICAL);
 
-        usernameTv = new TextView(activity);
-        usernameTv.setTextColor(TEXT_SECONDARY);
-        usernameTv.setTextSize(14);
-        row.addView(usernameTv);
+        nameTv = Ui.text(activity, "", Ui.TEXT_HEADER, 22);
+        nameTv.setTypeface(null, Typeface.BOLD);
+        nameTv.setSingleLine(true);
+        nameTv.setEllipsize(TextUtils.TruncateAt.END);
+        nameTv.setMaxWidth((int) (activity.getResources().getDisplayMetrics().widthPixels * 0.7f));
+        row.addView(nameTv);
 
-        botTag = new TextView(activity);
-        botTag.setText("BOT");
-        botTag.setTextColor(Color.WHITE);
-        botTag.setTextSize(10);
+        botTag = Ui.text(activity, "BOT", Color.WHITE, 10);
         botTag.setTypeface(null, Typeface.BOLD);
         botTag.setPadding(dp(6), dp(2), dp(6), dp(2));
-        
-        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
-        tagLp.setMarginStart(dp(6));
-        tagLp.gravity = Gravity.CENTER_VERTICAL;
-        botTag.setLayoutParams(tagLp);
-        
-        GradientDrawable tagBg = new GradientDrawable();
-        tagBg.setColor(ACCENT);
-        tagBg.setCornerRadius(dp(4));
-        botTag.setBackground(tagBg);
+        botTag.setBackground(Ui.rounded(Ui.BLURPLE, dp(4)));
         botTag.setVisibility(View.GONE);
-        row.addView(botTag);
+        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
+        tagLp.setMarginStart(dp(8));
+        row.addView(botTag, tagLp);
         block.addView(row);
 
-        pronounsTv = new TextView(activity);
-        pronounsTv.setTextColor(TEXT_MUTED);
-        pronounsTv.setTextSize(13);
-        pronounsTv.setGravity(Gravity.CENTER_HORIZONTAL);
-        pronounsTv.setPadding(0, dp(4), 0, 0);
-        pronounsTv.setVisibility(View.GONE);
-        block.addView(pronounsTv);
+        userLineTv = Ui.text(activity, "", Ui.TEXT, 14);
+        userLineTv.setSingleLine(true);
+        userLineTv.setEllipsize(TextUtils.TruncateAt.END);
+        block.addView(userLineTv);
         return block;
     }
 
-    private View buildBadgeSection() {
-        badgeSection = new LinearLayout(activity);
-        badgeSection.setOrientation(LinearLayout.VERTICAL);
-        badgeSection.setPadding(dp(20), dp(16), dp(20), 0);
-        badgeSection.setVisibility(View.GONE);
-        
-        badgesRow = new LinearLayout(activity);
-        badgesRow.setOrientation(LinearLayout.VERTICAL);
-        badgesRow.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-        badgeSection.addView(badgesRow);
-        return badgeSection;
+    private LinearLayout section() {
+        LinearLayout s = new LinearLayout(activity);
+        s.setOrientation(LinearLayout.VERTICAL);
+        return s;
     }
 
-    private View buildRolesSection() {
-        rolesSection = new LinearLayout(activity);
-        rolesSection.setOrientation(LinearLayout.VERTICAL);
-        rolesSection.setVisibility(View.GONE);
-        
-        LinearLayout card = buildCard();
-        card.setLayoutParams(cardLp());
-        card.addView(sectionHeader("ROLES"));
-        
-        rolesRow = new LinearLayout(activity);
-        rolesRow.setOrientation(LinearLayout.VERTICAL);
-        rolesRow.setPadding(0, dp(8), 0, 0);
-        card.addView(rolesRow);
-        
-        rolesSection.addView(card);
-        return rolesSection;
+    private LinearLayout.LayoutParams sectionLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(dp(16), dp(20), dp(16), 0);
+        return lp;
     }
 
-    private View buildAboutSection() {
-        aboutSection = buildCard();
-        aboutSection.setLayoutParams(cardLp());
-        aboutSection.addView(sectionHeader("ABOUT ME"));
-        
-        bioTv = new TextView(activity);
-        bioTv.setTextColor(TEXT_SECONDARY);
-        bioTv.setTextSize(14);
-        bioTv.setLineSpacing(0, 1.2f);
-        bioTv.setPadding(0, dp(6), 0, 0);
-        bioTv.setMovementMethod(LinkMovementMethod.getInstance());
-        aboutSection.addView(bioTv);
-        return aboutSection;
+    @Override
+    public void onSuccess(DiscordUser u) {
+        if (u == null || activity == null) return;
+        user = u;
+        applyName();
+        botTag.setVisibility(u.bot ? View.VISIBLE : View.GONE);
+
+        String base = Ui.isReal(u.globalName) ? u.globalName : u.username;
+        avatarInitial.setText(base == null || base.isEmpty() ? "?"
+            : base.substring(0, base.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
+
+        if (Ui.isReal(u.banner)) {
+            activity.imageLoader.load("https://cdn.discordapp.com/banners/" + u.id + "/" + u.banner + ".png?size=600", bannerIv);
+        } else if (u.accentColor != 0) {
+            bannerIv.setBackgroundColor(u.accentColor | 0xFF000000);
+        }
+        if (Ui.isReal(u.avatar)) {
+            activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + u.id + "/" + u.avatar + ".png?size=256", avatarIv);
+        }
+        renderDetails();
+        renderAbout();
     }
 
-    private View buildDetailsSection() {
-        detailsSection = buildCard();
-        detailsSection.setLayoutParams(cardLp());
-        detailsSection.addView(sectionHeader("DETAILS"));
-        return detailsSection;
+    @Override
+    public void onError(String msg) {
+        if (activity != null) activity.toast("Failed to load profile: " + msg);
     }
 
-    private void loadRoles() {
+    private void applyName() {
+        if (user == null) return;
+        String global = Ui.isReal(user.globalName) ? user.globalName : user.username;
+        nameTv.setText(Ui.isReal(nick) ? nick : global);
+        StringBuilder line = new StringBuilder(user.username == null ? "" : user.username);
+        if (Ui.isReal(user.pronouns)) line.append(" \u2022 ").append(user.pronouns);
+        userLineTv.setText(line.toString());
+    }
+
+    private void loadMember() {
         if (guildId == null || activity == null) return;
         activity.apiClient.fetchMember(guildId, userId, new ApiClient.Callback<JSONObject>() {
             @Override public void onSuccess(JSONObject member) {
+                if (activity == null) return;
+                nick = member.isNull("nick") ? null : member.optString("nick", null);
+                joinedMs = parseIso(member.isNull("joined_at") ? null : member.optString("joined_at", null));
+                applyName();
+                renderDetails();
+
                 JSONArray rolesArray = member.optJSONArray("roles");
                 if (rolesArray == null || rolesArray.length() == 0) return;
-                
                 final List<String> roleIds = new ArrayList<>();
                 for (int i = 0; i < rolesArray.length(); i++) roleIds.add(rolesArray.optString(i));
-                
                 activity.apiClient.fetchRoles(guildId, new ApiClient.Callback<Map<String, Role>>() {
                     @Override public void onSuccess(Map<String, Role> roles) {
                         if (activity == null) return;
                         activity.roleCache.putAll(roles);
-                        renderRoleChips(roleIds, roles);
+                        renderRoles(roleIds, roles);
                     }
                     @Override public void onError(String err) {}
                 });
@@ -249,259 +271,164 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
         });
     }
 
-    private void renderRoleChips(List<String> roleIds, Map<String, Role> allRoles) {
+    private void renderDetails() {
+        if (user == null || activity == null) return;
+        detailsSection.removeAllViews();
+
+        detailsSection.addView(Ui.sectionLabel(activity, "Member since"));
+        if (user.createdAtMs > 0) {
+            detailsSection.addView(sinceRow(Ui.BLURPLE, "D", formatDate(user.createdAtMs), "Discord"));
+        }
+        if (guildId != null && joinedMs > 0) {
+            String name = guildName();
+            detailsSection.addView(sinceRow(Ui.avatarColor(guildId),
+                name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
+                formatDate(joinedMs), name));
+        }
+        if (user.mutualGuildsCount > 0) {
+            detailsSection.addView(infoRow("Mutual servers", String.valueOf(user.mutualGuildsCount), dp(14)));
+        }
+        if (user.premiumType > 0) {
+            detailsSection.addView(infoRow("Subscription", user.premiumType == 2 ? "Nitro" : "Nitro Classic", user.mutualGuildsCount > 0 ? 0 : dp(14)));
+        }
+        detailsSection.setVisibility(View.VISIBLE);
+    }
+
+    private void renderAbout() {
+        if (user == null || activity == null) return;
+        aboutCard.removeAllViews();
+        if (!Ui.isReal(user.bio)) {
+            aboutCard.setVisibility(View.GONE);
+            return;
+        }
+        TextView title = Ui.text(activity, "About Me", Ui.TEXT_HEADER, 14);
+        title.setTypeface(null, Typeface.BOLD);
+        aboutCard.addView(title);
+        TextView bio = Ui.text(activity, "", Ui.TEXT, 14);
+        bio.setText(SimpleMarkdown.render(user.bio));
+        bio.setLineSpacing(0, 1.15f);
+        bio.setPadding(0, dp(6), 0, 0);
+        bio.setLinkTextColor(Ui.LINK);
+        bio.setMovementMethod(LinkMovementMethod.getInstance());
+        aboutCard.addView(bio);
+        aboutCard.setVisibility(View.VISIBLE);
+    }
+
+    private String guildName() {
+        List<Guild> gs = activity.guildCache.get("me");
+        if (gs != null) for (Guild g : gs) if (g.id.equals(guildId)) return g.name == null ? "" : g.name;
+        return "Server";
+    }
+
+    private View sinceRow(int tileColor, String letter, String date, String label) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+        rlp.topMargin = dp(8);
+        row.setLayoutParams(rlp);
+
+        TextView tile = Ui.text(activity, letter, Color.WHITE, 11);
+        tile.setTypeface(null, Typeface.BOLD);
+        tile.setGravity(Gravity.CENTER);
+        tile.setBackground(Ui.rounded(tileColor, dp(6)));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(dp(22), dp(22));
+        tlp.setMarginEnd(dp(10));
+        row.addView(tile, tlp);
+
+        row.addView(Ui.text(activity, date, Ui.TEXT, 14));
+        TextView l = Ui.text(activity, "  \u00B7  " + label, Ui.MUTED, 13);
+        l.setSingleLine(true);
+        l.setEllipsize(TextUtils.TruncateAt.END);
+        row.addView(l, new LinearLayout.LayoutParams(0, -2, 1f));
+        return row;
+    }
+
+    private View infoRow(String label, String value, int topMargin) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = topMargin == 0 ? dp(6) : topMargin;
+        row.setLayoutParams(lp);
+
+        row.addView(Ui.text(activity, label, Ui.MUTED, 14),
+            new LinearLayout.LayoutParams(-2, -2));
+
+        TextView v = Ui.text(activity, value, Ui.TEXT, 14);
+        LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(-2, -2);
+        vlp.setMarginStart(dp(8));
+        row.addView(v, vlp);
+        return row;
+    }
+
+    private void renderRoles(List<String> roleIds, Map<String, Role> allRoles) {
         rolesRow.removeAllViews();
-        boolean any = false;
         List<Role> memberRoles = new ArrayList<>();
-        
         for (String id : roleIds) {
             Role r = allRoles.get(id);
-            if (r != null) memberRoles.add(r);
+            if (r != null && !"@everyone".equals(r.name)) memberRoles.add(r);
         }
         Collections.sort(memberRoles, (a, b) -> Integer.compare(b.position, a.position));
-        
-        int maxWidth = activity.getResources().getDisplayMetrics().widthPixels - dp(72);
-        LinearLayout currentRow = null;
-        int usedWidth = 0;
-        
-        for (Role role : memberRoles) {
-            if ("@everyone".equals(role.name)) continue;
-            LinearLayout chip = buildChip(role.name, role.color, 8, 11);
-            chip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-            int w = chip.getMeasuredWidth() + dp(6);
-            if (currentRow == null || usedWidth + w > maxWidth) {
-                currentRow = new LinearLayout(activity);
-                currentRow.setOrientation(LinearLayout.HORIZONTAL);
-                currentRow.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-                rolesRow.addView(currentRow);
-                usedWidth = 0;
-            }
-            currentRow.addView(chip);
-            usedWidth += w;
-            any = true;
-        }
-        if (any) rolesSection.setVisibility(View.VISIBLE);
-    }
 
-    private void populateBadges(int flags, boolean bot) {
-        badgesRow.removeAllViews();
-        boolean any = false;
         int maxWidth = activity.getResources().getDisplayMetrics().widthPixels - dp(40);
         LinearLayout currentRow = null;
-        int usedWidth = 0;
-        List<String[]> badgeList = new ArrayList<>();
-        
-        if (bot) badgeList.add(new String[]{"\uD83E\uDD16", "Bot"});
-        if ((flags & (1 << 0)) != 0) badgeList.add(new String[]{"\uD83D\uDEE1", "Staff"});
-        if ((flags & (1 << 1)) != 0) badgeList.add(new String[]{"\uD83E\uDD1D", "Partner"});
-        if ((flags & (1 << 2)) != 0) badgeList.add(new String[]{"\uD83C\uDFC6", "HypeSquad"});
-        if ((flags & (1 << 3)) != 0) badgeList.add(new String[]{"\uD83D\uDC1B", "Bug Hunter"});
-        if ((flags & (1 << 6)) != 0) badgeList.add(new String[]{"\uD83C\uDFE0", "Bravery"});
-        if ((flags & (1 << 7)) != 0) badgeList.add(new String[]{"\uD83C\uDFE0", "Brilliance"});
-        if ((flags & (1 << 8)) != 0) badgeList.add(new String[]{"\uD83C\uDFE0", "Balance"});
-        if ((flags & (1 << 9)) != 0) badgeList.add(new String[]{"\u2B50", "Early Supporter"});
-        if ((flags & (1 << 14)) != 0) badgeList.add(new String[]{"\uD83D\uDC1B", "Bug Hunter Gold"});
-        if ((flags & (1 << 16)) != 0) badgeList.add(new String[]{"\u2611", "Verified Bot"});
-        if ((flags & (1 << 17)) != 0) badgeList.add(new String[]{"\uD83D\uDEE0", "Verified Dev"});
-        if ((flags & (1 << 18)) != 0) badgeList.add(new String[]{"\uD83D\uDEE1", "Mod Alumni"});
-        if ((flags & (1 << 22)) != 0) badgeList.add(new String[]{"\u26A1", "Active Dev"});
-
-        for (String[] badge : badgeList) {
-            LinearLayout chip = buildChip(badge[0] + " " + badge[1], 0, 0, 11);
+        int used = 0;
+        for (Role role : memberRoles) {
+            LinearLayout chip = buildRoleChip(role.name, role.color);
             chip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
             int w = chip.getMeasuredWidth() + dp(6);
-            if (currentRow == null || usedWidth + w > maxWidth) {
+            if (currentRow == null || used + w > maxWidth) {
                 currentRow = new LinearLayout(activity);
                 currentRow.setOrientation(LinearLayout.HORIZONTAL);
-                currentRow.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
-                badgesRow.addView(currentRow);
-                usedWidth = 0;
+                rolesRow.addView(currentRow, new LinearLayout.LayoutParams(-1, -2));
+                used = 0;
             }
             currentRow.addView(chip);
-            usedWidth += w;
-            any = true;
+            used += w;
         }
-        badgeSection.setVisibility(any ? View.VISIBLE : View.GONE);
+        rolesSection.setVisibility(memberRoles.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
-    private LinearLayout buildChip(String text, int dotColor, int dotSizeDp, int textSizeSp) {
+    private LinearLayout buildRoleChip(String name, int color) {
         LinearLayout chip = new LinearLayout(activity);
         chip.setOrientation(LinearLayout.HORIZONTAL);
         chip.setGravity(Gravity.CENTER_VERTICAL);
-        chip.setPadding(dp(8), dp(4), dp(10), dp(4));
-        
+        chip.setPadding(dp(8), dp(5), dp(10), dp(5));
+        chip.setBackground(Ui.rounded(CHIP_BG, dp(8)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.setMargins(dp(3), dp(3), dp(3), dp(3));
+        lp.setMargins(0, dp(3), dp(6), dp(3));
         chip.setLayoutParams(lp);
-        
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(CARD_BG);
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), CARD_BORDER);
-        chip.setBackground(bg);
-        
-        if (dotSizeDp > 0) {
-            View dot = new View(activity);
-            GradientDrawable dotBg = new GradientDrawable();
-            dotBg.setShape(GradientDrawable.OVAL);
-            dotBg.setColor(dotColor != 0 ? dotColor | 0xFF000000 : 0xFF949BA4);
-            dot.setBackground(dotBg);
-            
-            LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(dotSizeDp), dp(dotSizeDp));
-            dotLp.setMarginEnd(dp(6));
-            dot.setLayoutParams(dotLp);
-            chip.addView(dot);
-        }
-        
-        TextView t = new TextView(activity);
-        t.setText(text);
-        t.setTextColor(TEXT_SECONDARY);
-        t.setTextSize(textSizeSp);
+
+        View dot = new View(activity);
+        dot.setBackground(Ui.oval(color != 0 ? color | 0xFF000000 : Ui.MUTED));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(12), dp(12));
+        dlp.setMarginEnd(dp(6));
+        chip.addView(dot, dlp);
+
+        TextView t = Ui.text(activity, name, Ui.TEXT, 12);
+        t.setSingleLine(true);
         chip.addView(t);
         return chip;
     }
 
-    private void populateDetails(DiscordUser user) {
-        if (detailsSection.getChildCount() > 1) {
-            detailsSection.removeViews(1, detailsSection.getChildCount() - 1);
+    private static String formatDate(long ms) {
+        return new SimpleDateFormat("MMM d, yyyy", Locale.US).format(new Date(ms));
+    }
+
+    private static long parseIso(String s) {
+        if (s == null || s.length() < 19) return 0;
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
+            f.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date d = f.parse(s.substring(0, 19));
+            return d == null ? 0 : d.getTime();
+        } catch (Exception e) {
+            return 0;
         }
-        if (user.createdAtMs > 0) {
-            SimpleDateFormat sdf = new SimpleDateFormat("MMM d, yyyy", Locale.US);
-            detailsSection.addView(detailRow("Account created", sdf.format(new Date(user.createdAtMs))));
-            detailsSection.addView(detailRow("Account age", formatAge(user.createdAtMs)));
-        }
-        if (user.premiumType > 0) {
-            detailsSection.addView(detailRow("Subscription", user.premiumType == 2 ? "Nitro" : "Nitro Classic"));
-        }
-        if (user.mutualGuildsCount > 0) {
-            String label = user.mutualGuildsCount == 1 ? "1 server" : user.mutualGuildsCount + " servers";
-            detailsSection.addView(detailRow("Mutual servers", label));
-        }
-        detailsSection.addView(buildCopyButton());
     }
 
-    private View buildCopyButton() {
-        TextView b = a.b.util.Ui.text(activity, "Copy user ID", 0xFFFFFFFF, 14);
-        b.setTypeface(null, Typeface.BOLD);
-        b.setGravity(Gravity.CENTER);
-        b.setClickable(true);
-        b.setBackground(a.b.util.Ui.ripple(a.b.util.Ui.rounded(ACCENT, dp(8)), dp(8)));
-        
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
-        lp.setMargins(0, dp(12), 0, 0);
-        b.setLayoutParams(lp);
-        
-        b.setOnClickListener(v -> {
-            ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("user id", userId));
-            activity.toast("Copied user ID");
-        });
-        return b;
-    }
-
-    private LinearLayout buildCard() {
-        LinearLayout card = new LinearLayout(activity);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(CARD_BG);
-        bg.setCornerRadius(dp(10));
-        bg.setStroke(dp(1), CARD_BORDER);
-        card.setBackground(bg);
-        return card;
-    }
-
-    private LinearLayout.LayoutParams cardLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(dp(20), dp(16), dp(20), 0);
-        return lp;
-    }
-
-    private TextView sectionHeader(String text) {
-        TextView tv = new TextView(activity);
-        tv.setText(text);
-        tv.setTextColor(TEXT_MUTED);
-        tv.setTextSize(11);
-        tv.setTypeface(null, Typeface.BOLD);
-        tv.setLetterSpacing(0.05f);
-        return tv;
-    }
-
-    private View detailRow(String label, String value) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(10);
-        row.setLayoutParams(lp);
-        
-        TextView labelTv = new TextView(activity);
-        labelTv.setText(label);
-        labelTv.setTextColor(TEXT_MUTED);
-        labelTv.setTextSize(13);
-        labelTv.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
-        row.addView(labelTv);
-        
-        TextView valueTv = new TextView(activity);
-        valueTv.setText(value);
-        valueTv.setTextColor(TEXT_PRIMARY);
-        valueTv.setTextSize(13);
-        valueTv.setGravity(Gravity.END);
-        row.addView(valueTv);
-        return row;
-    }
-
-    private static String formatAge(long createdAtMs) {
-        long now = System.currentTimeMillis();
-        long days = (now - createdAtMs) / (1000L * 60 * 60 * 24);
-        if (days < 0) days = 0;
-        if (days < 30) return days + (days == 1 ? " day" : " days");
-        long months = days / 30;
-        if (months < 12) return months + (months == 1 ? " month" : " months");
-        long years = days / 365;
-        long rem = (days - years * 365) / 30;
-        if (rem == 0) return years + (years == 1 ? " year" : " years");
-        return years + "y " + rem + "mo";
-    }
-
-    @Override
-    public void onSuccess(DiscordUser user) {
-        if (user == null || activity == null) return;
-        usernameTv.setText("@" + user.username);
-        globalNameTv.setText(isReal(user.globalName) ? user.globalName : user.username);
-        botTag.setVisibility(user.bot ? View.VISIBLE : View.GONE);
-        
-        if (isReal(user.pronouns)) {
-            pronounsTv.setText(user.pronouns);
-            pronounsTv.setVisibility(View.VISIBLE);
-        }
-        if (isReal(user.banner)) {
-            activity.imageLoader.load("https://cdn.discordapp.com/banners/" + user.id + "/" + user.banner + ".png?size=600", bannerIv);
-        } else if (user.accentColor != 0) {
-            bannerIv.setImageBitmap(null);
-            bannerIv.setBackgroundColor(user.accentColor | 0xFF000000);
-        }
-        if (isReal(user.avatar)) {
-            activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + user.id + "/" + user.avatar + ".png?size=256", avatarIv);
-        }
-        if (isReal(user.bio)) {
-            bioTv.setText(SimpleMarkdown.render(user.bio));
-        } else {
-            aboutSection.setVisibility(View.GONE);
-        }
-        populateBadges(user.publicFlags, user.bot);
-        populateDetails(user);
-    }
-
-    @Override
-    public void onError(String msg) {
-        if (activity != null) activity.toast("Failed to load profile: " + msg);
-    }
-
-    private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) { return Ui.dp(activity, v); }
 
     @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
     @Override public View getView() { return view; }
