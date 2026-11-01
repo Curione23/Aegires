@@ -17,7 +17,6 @@ import android.text.style.RelativeSizeSpan;
 import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
-import android.text.style.URLSpan;
 import android.text.style.UnderlineSpan;
 import android.view.View;
 import java.util.regex.Matcher;
@@ -37,8 +36,7 @@ public final class DiscordMarkdown {
     private static final Pattern LIST_ITEM = Pattern.compile("( *)([-*]|\\d{1,9}\\.) +(\\S.*)");
     private static final Pattern AUTO_LINK = Pattern.compile("<(https?://[^\\s>]+)>", Pattern.CASE_INSENSITIVE);
     private static final Pattern URL_START = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
-    private static final Pattern TOKEN = Pattern.compile(
-        "<(?:@!?\\d+|@&\\d+|#\\d+|a?:\\w+:\\d+|t:-?\\d+(?::[tTdDfFR])?|/[\\w-]+(?: [\\w-]+){0,2}:\\d+|id:[\\w-]+)>");
+    private static final Pattern TOKEN = Pattern.compile("<(?:@!?\\d+|@&\\d+|#\\d+|a?:\\w+:\\d+|t:-?\\d+(?::[tTdDfFR])?|/[\\w-]+(?: [\\w-]+){0,2}:\\d+|id:[\\w-]+)>");
 
     private static final int FLAGS = Spannable.SPAN_EXCLUSIVE_EXCLUSIVE;
 
@@ -460,7 +458,7 @@ public final class DiscordMarkdown {
         int st = out.length();
         inline(out, s, i + 1, close, false, true);
         if (out.length() == st) return -1;
-        out.setSpan(new URLSpan(url), st, out.length(), FLAGS);
+        out.setSpan(new LinkSpan(url), st, out.length(), FLAGS);
         return p + 1;
     }
 
@@ -470,7 +468,7 @@ public final class DiscordMarkdown {
             String url = m.group(1);
             int st = out.length();
             out.append(url);
-            out.setSpan(new URLSpan(url), st, out.length(), FLAGS);
+            out.setSpan(new LinkSpan(url), st, out.length(), FLAGS);
             return m.end();
         }
         m = TOKEN.matcher(s).region(i, to);
@@ -502,7 +500,7 @@ public final class DiscordMarkdown {
         String url = s.substring(i, e);
         int st = out.length();
         out.append(url);
-        out.setSpan(new URLSpan(url), st, out.length(), FLAGS);
+        out.setSpan(new LinkSpan(url), st, out.length(), FLAGS);
         return e;
     }
 
@@ -510,6 +508,18 @@ public final class DiscordMarkdown {
         int n = 0;
         for (int k = from; k < to; k++) if (s.charAt(k) == c) n++;
         return n;
+    }
+
+    public static final class LinkSpan extends ClickableSpan {
+        private final String url;
+
+        LinkSpan(String url) { this.url = url; }
+
+        public String getURL() { return url; }
+
+        @Override public void onClick(View v) {
+            LinkDialog.show(v.getContext(), url);
+        }
     }
 
     public static final class SpoilerSpan extends ClickableSpan {
