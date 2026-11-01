@@ -55,19 +55,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     private static final Pattern ROLE_MENTION = Pattern.compile("<@&(\\d+)>");
     private static final Pattern CHANNEL_MENTION = Pattern.compile("<#(\\d+)>");
     private static final Pattern EVERYONE_HERE = Pattern.compile("(?<![\\w@])@(everyone|here)\\b");
-    private static final Pattern TIMESTAMP = Pattern.compile("<t:(-?\\d{1,12})(?::([a-zA-Z]))?>");
+    private static final Pattern TIMESTAMP = Pattern.compile("<t:(-?\\d{1,12})(?::([tTdDfFR]))?>");
+    private static final Pattern SLASH_COMMAND = Pattern.compile("</([\\w-]+(?: [\\w-]+){0,2}):\\d+>");
+    private static final Pattern GUILD_NAV = Pattern.compile("<id:(customize|browse|guide|linked-roles)>");
     private static final Pattern ATTACHMENT_ID = Pattern.compile("/attachments/[^/]+/([^/]+)/");
-    private static final Pattern FENCE_LANG = Pattern.compile("[\\w+#.-]*\\n");
-    private static final Pattern HEADING = Pattern.compile("^(#{1,3}) (.+)$", Pattern.MULTILINE);
-    private static final Pattern LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
-    private static final Pattern BOLD = Pattern.compile("\\*\\*(.+?)\\*\\*");
-    private static final Pattern UNDERLINE = Pattern.compile("__(.+?)__");
-    private static final Pattern ITALIC_STAR = Pattern.compile("\\*(.+?)\\*");
-    private static final Pattern ITALIC_UNDERSCORE = Pattern.compile("(?<!\\w)_(.+?)_(?!\\w)");
-    private static final Pattern STRIKE = Pattern.compile("~~(.+?)~~");
-    private static final Pattern SPOILER = Pattern.compile("\\|\\|(.+?)\\|\\|");
-    private static final Pattern QUOTE = Pattern.compile("^> .*$", Pattern.MULTILINE);
-    private static final Pattern BARE_URL = Pattern.compile("https?://[^\\s<>]*[^\\s<>.,;:!?'\")\\]]");
 
     private static final String STYLES = "tTdDfF";
     private static final String[] DATE_PATTERNS = {
@@ -89,7 +80,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     ImageLoader imageLoader;
     final String guildId;
     final float density;
-    final int emojiSize, bodyIndent, avatarSize;
+    final int emojiSize, jumboSize, bodyIndent, avatarSize;
 
     public final Map<String, CharSequence> parsedContentCache = Collections.synchronizedMap(
         new LinkedHashMap<String, CharSequence>(64, 0.75f, true) {
@@ -140,6 +131,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         density = activity.getResources().getDisplayMetrics().density;
         avatarSize = dp(40);
         emojiSize = dp(22);
+        jumboSize = dp(48);
         bodyIndent = dp(52);
         if (activity != null) {
             final Context ctx = activity.getApplicationContext();
@@ -323,73 +315,48 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private CharSequence render(String raw, Message msg) {
+        return render(raw, msg, true);
+    }
+
+    private CharSequence render(String raw, Message msg, boolean markdown) {
         if (raw == null || raw.isEmpty()) return "";
-        SpannableStringBuilder sb = parseMarkdown(raw);
-        if (msg.id != null) emojis(sb, msg.id);
+        SpannableStringBuilder sb = markdown ? DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
+        int jumbo = markdown ? emojiOnly(raw) : 0;
+        if (msg.id != null) emojis(sb, msg.id, jumbo != 0);
         mentions(sb, msg);
         timestamps(sb);
+        if (jumbo == 2) span(sb, 0, sb.length(), new RelativeSizeSpan(2.4f));
         return sb;
     }
 
-    private static SpannableStringBuilder parseMarkdown(String raw) {
-        SpannableStringBuilder out = new SpannableStringBuilder();
-        int len = raw.length(), i = 0;
-        while (i < len) {
-            int tick = raw.indexOf('`', i);
-            if (tick != i) {
-                int end = tick < 0 ? len : tick;
-                out.append(inline(raw.substring(i, end)));
-                i = end;
-            } else if (raw.startsWith("```", i)) {
-                int start = i + 3;
-                int end = raw.indexOf("```", start);
-                if (end < 0) end = len;
-                Matcher lang = FENCE_LANG.matcher(raw);
-                lang.region(start, end);
-                if (lang.lookingAt()) start = lang.end();
-                if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
-                code(out, raw.substring(start, end));
-                i = Math.min(len, end + 3);
-                if (i < len && raw.charAt(i) != '\n') out.append('\n');
-            } else {
-                int end = raw.indexOf('`', i + 1);
-                if (end < 0) {
-                    out.append('`');
-                    i++;
-                } else {
-                    code(out, raw.substring(i + 1, end));
-                    i = end + 1;
-                }
-            }
+    private static boolean isEmojiCodePoint(int cp) {
+        return (cp >= 0x1F000 && cp <= 0x1FAFF) || (cp >= 0x2190 && cp <= 0x21FF) || (cp >= 0x2300 && cp <= 0x23FF)
+            || (cp >= 0x2600 && cp <= 0x27BF) || (cp >= 0x2900 && cp <= 0x297F) || (cp >= 0x2B00 && cp <= 0x2BFF)
+            || cp == 0xA9 || cp == 0xAE || cp == 0x203C || cp == 0x2049 || cp == 0x2122 || cp == 0x2139
+            || cp == 0x24C2 || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299;
+    }
+
+    /** 0 = normal message, 1 = only custom emoji, 2 = only emoji with at least one unicode one (max 27). */
+    private static int emojiOnly(String raw) {
+        String t = CUSTOM_EMOJI.matcher(raw).replaceAll("\u0001");
+        int count = 0;
+        boolean unicode = false;
+        for (int i = 0; i < t.length(); ) {
+            int cp = t.codePointAt(i);
+            i += Character.charCount(cp);
+            if (Character.isWhitespace(cp)) continue;
+            if (cp == 0x1) { count++; continue; }
+            if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || (cp >= 0x1F3FB && cp <= 0x1F3FF)) continue;
+            if (!isEmojiCodePoint(cp)) return 0;
+            count++;
+            unicode = true;
         }
-        return out;
+        if (count == 0 || count > 27) return 0;
+        return unicode ? 2 : 1;
     }
 
-    private static void code(SpannableStringBuilder out, String code) {
-        if (code.isEmpty()) return;
-        int s = out.length();
-        out.append(code);
-        span(out, s, out.length(), new BackgroundColorSpan(PANEL), new TypefaceSpan("monospace"), new ForegroundColorSpan(TEXT));
-    }
-
-    private static SpannableStringBuilder inline(String text) {
-        SpannableStringBuilder sb = new SpannableStringBuilder(text);
-        wrap(sb, HEADING, 2, (b, s, e, m) -> span(b, s, e, new RelativeSizeSpan(m.group(1).length() == 1 ? 1.6f : 1.3f), new StyleSpan(Typeface.BOLD)));
-        wrap(sb, LINK, 1, (b, s, e, m) -> span(b, s, e, new URLSpan(m.group(2))));
-        wrap(sb, BOLD, 1, (b, s, e, m) -> span(b, s, e, new StyleSpan(Typeface.BOLD)));
-        wrap(sb, UNDERLINE, 1, (b, s, e, m) -> span(b, s, e, new UnderlineSpan()));
-        wrap(sb, ITALIC_STAR, 1, (b, s, e, m) -> span(b, s, e, new StyleSpan(Typeface.ITALIC)));
-        wrap(sb, ITALIC_UNDERSCORE, 1, (b, s, e, m) -> span(b, s, e, new StyleSpan(Typeface.ITALIC)));
-        wrap(sb, STRIKE, 1, (b, s, e, m) -> span(b, s, e, new StrikethroughSpan()));
-        wrap(sb, SPOILER, 1, (b, s, e, m) -> span(b, s, e, new SpoilerSpan()));
-        wrap(sb, QUOTE, 0, (b, s, e, m) -> span(b, s, e, new ForegroundColorSpan(MUTED)));
-        wrap(sb, BARE_URL, 0, (b, s, e, m) -> {
-            if (b.getSpans(s, e, URLSpan.class).length == 0) span(b, s, e, new URLSpan(m.group()));
-        });
-        return sb;
-    }
-
-    private void emojis(SpannableStringBuilder sb, String msgId) {
+    private void emojis(SpannableStringBuilder sb, String msgId, boolean jumbo) {
+        final int size = jumbo ? jumboSize : emojiSize;
         sub(sb, CUSTOM_EMOJI, m -> " ", (b, s, e, m) -> {
             String id = m.group(1);
             Bitmap bmp = emojiCache.get(id);
@@ -408,7 +375,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 boolean animated = m.group().charAt(1) == 'a';
                 loadEmoji(id, CDN + "emojis/" + id + (animated ? ".gif" : ".png") + "?size=128");
             }
-            d.setBounds(0, 0, emojiSize, emojiSize);
+            d.setBounds(0, 0, size, size);
             span(b, s, e, new ImageSpan(d, ImageSpan.ALIGN_BOTTOM));
         });
     }
@@ -425,6 +392,15 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             String id = m.group(1);
             span(b, s, e, new Click(() -> openProfile(id)));
         });
+        sub(sb, SLASH_COMMAND, m -> "/" + m.group(1), chip);
+        sub(sb, GUILD_NAV, m -> {
+            switch (m.group(1)) {
+                case "customize": return "Channels & Roles";
+                case "browse": return "Browse Channels";
+                case "guide": return "Server Guide";
+                default: return "Linked Roles";
+            }
+        }, chip);
         wrap(sb, EVERYONE_HERE, 0, (b, s, e, m) -> span(b, s, e, new ForegroundColorSpan(EVERYONE_FG), new BackgroundColorSpan(EVERYONE_BG), new StyleSpan(Typeface.BOLD)));
     }
 
@@ -556,7 +532,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 try (InputStream in = conn.getInputStream()) {
                     Bitmap raw = BitmapFactory.decodeStream(in);
                     if (raw == null) return;
-                    emojiCache.put(id, Bitmap.createScaledBitmap(raw, emojiSize, emojiSize, true));
+                    emojiCache.put(id, Bitmap.createScaledBitmap(raw, jumboSize, jumboSize, true));
                 }
                 Set<String> affected = emojiMessageMap.remove(id);
                 if (affected != null) {
@@ -982,7 +958,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         box.setBackground(bg);
         box.setClipToOutline(true);
         if (title) {
-            TextView t = tv(render(e.title, msg), LINK_FG, 14);
+            TextView t = tv(render(e.title, msg, false), LINK_FG, 14);
             t.setTypeface(null, Typeface.BOLD);
             box.addView(t);
         }
@@ -1329,18 +1305,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         Click(Runnable action) { this.action = action; }
         @Override public void onClick(View v) { action.run(); }
         @Override public void updateDrawState(TextPaint ds) { ds.setUnderlineText(false); }
-    }
-
-    private static final class SpoilerSpan extends ClickableSpan {
-        private boolean revealed;
-        @Override public void onClick(View v) {
-            revealed = !revealed;
-            v.invalidate();
-        }
-        @Override public void updateDrawState(TextPaint ds) {
-            ds.bgColor = revealed ? 0x33000000 : Color.BLACK;
-            ds.setColor(revealed ? TEXT : Color.BLACK);
-        }
     }
 
     private static Long timestampMillis(String seconds) {
