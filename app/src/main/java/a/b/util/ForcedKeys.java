@@ -35,7 +35,7 @@ public final class ForcedKeys {
         SecretKey have = DERIVED.get(channelId);
         if (have != null) { MAIN.post(() -> cb.onKey(have)); return; }
         new Thread(() -> {
-            final SecretKey k = Crypto.deriveKey(password);
+            final SecretKey k = Crypto.deriveKey(password, "forced|" + channelId);
             if (k != null) DERIVED.put(channelId, k);
             MAIN.post(() -> cb.onKey(k));
         }, "forced-key").start();

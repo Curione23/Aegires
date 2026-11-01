@@ -120,6 +120,7 @@ public class MessageListScreen implements Screen {
         });
         
         adapter.keyOverride = forcedKey;
+        adapter.channelId = channelId;
         activity.mentions.markChannelRead(channelId);
         if (forced && forcedKey == null) {
             ForcedKeys.prepare(channelId, k -> {
@@ -165,6 +166,10 @@ public class MessageListScreen implements Screen {
     private javax.crypto.SecretKey key() {
         if (forced) return forcedKey;
         return activity != null ? activity.e2eeKey : null;
+    }
+
+    private Crypto.Preset preset() {
+        return forced ? Crypto.Preset.AES128 : activity.e2eePreset;
     }
 
     private boolean encOn() {
@@ -622,11 +627,18 @@ public class MessageListScreen implements Screen {
             activity.toast(forced ? "Encryption key not ready yet" : "Encryption key missing");
             return null;
         }
-        if (plain.length() > Crypto.MAX_PLAINTEXT_LEN) {
-            activity.toast("Too long for encryption (max " + Crypto.MAX_PLAINTEXT_LEN + ")");
+        String sender = activity.selfId();
+        if (sender == null) {
+            activity.toast("Not ready yet, try again in a moment");
             return null;
         }
-        String out = Crypto.encrypt(plain, key());
+        Crypto.Preset p = preset();
+        int max = Crypto.maxPlaintextBytes(p);
+        if (Crypto.utf8Length(plain) > max) {
+            activity.toast("Too long for " + p.label + " (max " + max + " bytes)");
+            return null;
+        }
+        String out = Crypto.encrypt(plain, key(), p, channelId, sender);
         if (out == null) activity.toast("Encryption failed");
         return out;
     }
@@ -636,14 +648,15 @@ public class MessageListScreen implements Screen {
     private void decryptMessageInPlace(Message m) {
         if (m == null || activity == null || key() == null) return;
         if (Crypto.looksEncrypted(m.content)) {
-            String plain = Crypto.decrypt(m.content, key());
+            String plain = Crypto.decrypt(m.content, key(), channelId, m.author != null ? m.author.id : null);
             if (plain != null) {
                 m.content = plain;
                 extractAndCleanDimensions(m);
             }
         }
         if (Crypto.looksEncrypted(m.replyToContent)) {
-            String plain = Crypto.decrypt(m.replyToContent, key());
+            String replyChannel = m.replyToChannelId != null ? m.replyToChannelId : channelId;
+            String plain = Crypto.decrypt(m.replyToContent, key(), replyChannel, m.replyToAuthorId);
             if (plain != null) {
                 m.replyToContent = plain;
                 cleanReplyDimensions(m);
@@ -707,7 +720,7 @@ public class MessageListScreen implements Screen {
             if (outText == null) { restoreInput(text); return; }
             if (encOn() && key() != null) {
                 String encName = encryptedFileName(pendingFileName);
-                api.sendEncryptedFile(activity, channelId, outText, pendingFileUri, encName, key(), done("Upload failed: ", text, clearAttachment));
+                api.sendEncryptedFile(activity, channelId, outText, pendingFileUri, encName, key(), preset(), activity.selfId(), done("Upload failed: ", text, clearAttachment));
             } else {
                 api.sendFile(activity, channelId, outText, pendingFileUri, pendingMimeType, pendingFileName, done("Upload failed: ", text, clearAttachment));
             }

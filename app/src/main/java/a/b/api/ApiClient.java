@@ -259,33 +259,22 @@ public class ApiClient {
         }, cb);
     }
 
-    public void sendEncryptedFile(Context ctx, String channelId, String content, Uri fileUri, String fileName, javax.crypto.SecretKey key, Callback<Void> cb) {
+    public void sendEncryptedFile(Context ctx, String channelId, String content, Uri fileUri, String fileName,
+                                  javax.crypto.SecretKey key, a.b.util.Crypto.Preset preset, String senderId, Callback<Void> cb) {
         async("http.UPLOAD.enc", () -> {
+            if (key == null || preset == null || senderId == null) throw new IOException("Encryption key missing");
             long size = fileSize(ctx, fileUri);
-            if (size >= 0 && size + 28 > MAX_UPLOAD_BYTES) throw new IOException("File too large for E2EE upload");
-            if (key == null) throw new IOException("Encryption key missing");
+            if (size >= 0 && size + a.b.util.Crypto.fileOverhead(preset, size) > MAX_UPLOAD_BYTES) {
+                throw new IOException("File too large for E2EE upload");
+            }
             RequestBody fileBody = new RequestBody() {
                 @Override public MediaType contentType() { return MediaType.parse("application/octet-stream"); }
                 @Override public void writeTo(okio.BufferedSink sink) throws IOException {
-                    try {
-                        byte[] iv = new byte[12];
-                        new java.security.SecureRandom().nextBytes(iv);
-                        sink.write(iv);
-                        javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
-                        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key, new javax.crypto.spec.GCMParameterSpec(128, iv));
-                        java.io.OutputStream sinkOut = new java.io.OutputStream() {
-                            @Override public void write(int b) throws IOException { sink.writeByte((byte) b); }
-                            @Override public void write(byte[] b, int off, int len) throws IOException { sink.write(b, off, len); }
-                        };
-                        try (InputStream in = ctx.getContentResolver().openInputStream(fileUri);
-                             javax.crypto.CipherOutputStream cos = new javax.crypto.CipherOutputStream(sinkOut, cipher)) {
-                            if (in == null) throw new IOException("Could not open " + fileUri);
-                            byte[] buf = new byte[8192];
-                            int n;
-                            while ((n = in.read(buf)) > 0) cos.write(buf, 0, n);
+                    try (InputStream in = ctx.getContentResolver().openInputStream(fileUri)) {
+                        if (in == null) throw new IOException("Could not open " + fileUri);
+                        if (!a.b.util.Crypto.encryptStream(in, sink.outputStream(), key, preset, channelId, senderId)) {
+                            throw new IOException("Encryption failed");
                         }
-                    } catch (java.security.GeneralSecurityException e) {
-                        throw new IOException("Encryption init failed", e);
                     }
                 }
             };

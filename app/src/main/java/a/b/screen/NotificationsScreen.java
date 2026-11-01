@@ -201,7 +201,7 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
         if (Crypto.looksEncrypted(c)) {
             javax.crypto.SecretKey k = a.b.util.ForcedKeys.keyFor(m.channelId);
             if (k == null) k = activity.e2eeKey;
-            String dec = k != null ? Crypto.decrypt(c, k) : null;
+            String dec = k != null ? Crypto.decrypt(c, k, m.channelId, m.authorId) : null;
             if (dec == null) return "Encrypted message";
             c = dec;
         }

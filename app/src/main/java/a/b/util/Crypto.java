@@ -1,31 +1,76 @@
 package a.b.util;
 
 import android.util.Base64;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.text.Normalizer;
 import java.util.Arrays;
-import java.util.zip.Deflater;
-import java.util.zip.Inflater;
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
+/**
+ * End-to-end encryption for messages and attachments.
+ *
+ * Password -> Argon2id -> 256-bit key (kept in memory only).
+ * Every message/file then gets its own key and nonce from HKDF-SHA256(master, random salt,
+ * context), where the context binds the preset, channel and sender. Messages are padded,
+ * never compressed, and authenticated together with their header and context, so a ciphertext
+ * cannot be moved to another channel or replayed under another author.
+ */
 public final class Crypto {
+
+    /** What a sender uses; receivers read it from the header, so presets can be mixed freely. */
+    public enum Preset {
+        AES128(0, "AES-128-GCM", 16, 12, 16),
+        AES192(1, "AES-192-GCM", 24, 14, 32),
+        AES256(2, "AES-256-GCM", 32, 16, 64);
+
+        public final int index;
+        public final String label;
+        public final int keyBytes;
+        public final int tagBytes;
+        public final int padBlock;
+
+        Preset(int index, String label, int keyBytes, int tagBytes, int padBlock) {
+            this.index = index;
+            this.label = label;
+            this.keyBytes = keyBytes;
+            this.tagBytes = tagBytes;
+            this.padBlock = padBlock;
+        }
+
+        public int tagBits() { return tagBytes * 8; }
+
+        public static Preset fromIndex(int i) {
+            for (Preset p : values()) if (p.index == i) return p;
+            return null;
+        }
+    }
+
+    public static final int DISCORD_CONTENT_LIMIT = 2000;
+
     private static final String PREFIX = "\u00A7";
-    private static final byte[] SALT = "pwc".getBytes(StandardCharsets.UTF_8);
-    private static final int ITERATIONS = 15000;
-    private static final int KEY_LENGTH = 256;
-    private static final int GCM_TAG_LENGTH = 128;
-    private static final int IV_LENGTH = 12;
-    private static final int COMPRESS_THRESHOLD = 100;
-    private static final byte FLAG_RAW = 0;
-    private static final byte FLAG_GZIP = 1;
-    public static final int MAX_PLAINTEXT_LEN = 1300;
-    private static final int MAX_DECOMPRESSED_BYTES = 1 << 20;
+    private static final int VERSION_MESSAGE = 2;
+    private static final int VERSION_FILE = 3;
+    private static final int SALT_LEN = 16;
+    private static final int NONCE_LEN = 12;
+    private static final int MASTER_LEN = 32;
+    private static final int FILE_CHUNK = 64 * 1024;
+    private static final int FILE_PREFIX_LEN = 7;
+
+    private static final int ARGON_PASSES = 3;
+    private static final int ARGON_MEMORY_KIB = 64 * 1024;
+    private static final byte[] USER_KEY_SALT = "dcenc2|user-key|v1".getBytes(StandardCharsets.UTF_8);
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private Crypto() {}
@@ -34,182 +79,316 @@ public final class Crypto {
         return s != null && s.startsWith(PREFIX);
     }
 
+    // ------------------------------------------------------------- key derivation
+
+    /** Key for the session-wide password. Slow by design: call off the UI thread. */
     public static SecretKey deriveKey(String password) {
-        try {
-            PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), SALT, ITERATIONS, KEY_LENGTH);
-            SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
-            byte[] keyBytes = factory.generateSecret(spec).getEncoded();
-            return new SecretKeySpec(keyBytes, "AES");
-        } catch (Exception e) {
-            return null;
-        }
+        return derive(password, USER_KEY_SALT);
     }
 
-    public static String encrypt(String plaintext, SecretKey key) {
-        if (plaintext == null || key == null) return null;
-        try {
-            byte[] rawBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-            byte[] compressed = rawBytes.length >= COMPRESS_THRESHOLD ? gzip(rawBytes) : null;
-            boolean useGzip = compressed != null && compressed.length < rawBytes.length;
-            byte[] data = useGzip ? compressed : rawBytes;
-            
-            byte[] payload = new byte[data.length + 1];
-            payload[0] = useGzip ? FLAG_GZIP : FLAG_RAW;
-            System.arraycopy(data, 0, payload, 1, data.length);
-            
-            byte[] iv = new byte[IV_LENGTH];
-            RANDOM.nextBytes(iv);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            byte[] ciphertext = cipher.doFinal(payload);
-            
-            byte[] combined = new byte[iv.length + ciphertext.length];
-            System.arraycopy(iv, 0, combined, 0, iv.length);
-            System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
-            return PREFIX + Base64.encodeToString(combined, Base64.NO_WRAP);
-        } catch (Exception e) {
-            return null;
-        }
+    /** Key bound to a context (for example one preset channel), with its own salt. */
+    public static SecretKey deriveKey(String password, String context) {
+        return derive(password, ("dcenc2|ctx|" + context).getBytes(StandardCharsets.UTF_8));
     }
 
-    public static String decrypt(String wire, SecretKey key) {
-        if (!looksEncrypted(wire) || key == null) return null;
+    private static SecretKey derive(String password, byte[] salt) {
+        if (password == null || password.isEmpty()) return null;
+        byte[] pw = null;
         try {
-            String b64 = wire.substring(PREFIX.length());
-            byte[] combined = Base64.decode(b64, Base64.NO_WRAP);
-            if (combined.length < IV_LENGTH + (GCM_TAG_LENGTH / 8)) return null;
-            
-            byte[] iv = Arrays.copyOfRange(combined, 0, IV_LENGTH);
-            byte[] ciphertext = Arrays.copyOfRange(combined, IV_LENGTH, combined.length);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            byte[] payload = cipher.doFinal(ciphertext);
-            if (payload.length == 0) return null;
-            
-            byte flag = payload[0];
-            byte[] data = Arrays.copyOfRange(payload, 1, payload.length);
-            if (flag == FLAG_GZIP) {
-                byte[] decompressed = gunzip(data);
-                return decompressed == null ? null : new String(decompressed, StandardCharsets.UTF_8);
-            } else {
-                return new String(data, StandardCharsets.UTF_8);
-            }
-        } catch (Exception e) {
+            pw = Normalizer.normalize(password, Normalizer.Form.NFKC).getBytes(StandardCharsets.UTF_8);
+            byte[] master = Argon2id.hash(pw, salt, ARGON_PASSES, ARGON_MEMORY_KIB, MASTER_LEN);
+            SecretKey key = new SecretKeySpec(master, "HKDF");
+            Arrays.fill(master, (byte) 0);
+            return key;
+        } catch (Throwable t) {
             return null;
-        }
-    }
-
-    private static byte[] gzip(byte[] data) {
-        Deflater deflater = new Deflater(Deflater.BEST_SPEED, true);
-        try {
-            deflater.setInput(data);
-            deflater.finish();
-            ByteArrayOutputStream out = new ByteArrayOutputStream(data.length);
-            byte[] buf = new byte[1024];
-            while (!deflater.finished()) {
-                int n = deflater.deflate(buf);
-                if (n > 0) out.write(buf, 0, n);
-            }
-            return out.toByteArray();
         } finally {
-            deflater.end();
+            if (pw != null) Arrays.fill(pw, (byte) 0);
         }
     }
 
-    private static byte[] gunzip(byte[] data) {
-        Inflater inflater = new Inflater(true);
+    // --------------------------------------------------------------------- sizes
+
+    private static int maxRawBytesForChars(int chars) {
+        int n = chars * 3 / 4 + 1;
+        while ((4 * n + 2) / 3 > chars) n--;
+        return n;
+    }
+
+    public static int maxPlaintextBytes(Preset p) {
+        int raw = maxRawBytesForChars(DISCORD_CONTENT_LIMIT - PREFIX.length());
+        int payloadCap = raw - 1 - SALT_LEN - p.tagBytes;
+        return (payloadCap / p.padBlock) * p.padBlock - 1;
+    }
+
+    public static int utf8Length(String s) {
+        return s.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    public static long fileOverhead(Preset p, long plainSize) {
+        long chunks = Math.max(1, (plainSize + FILE_CHUNK - 1) / FILE_CHUNK);
+        return 1 + SALT_LEN + chunks * p.tagBytes;
+    }
+
+    // ----------------------------------------------------------------- messages
+
+    public static String encrypt(String plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
+        if (plaintext == null || master == null || preset == null || channelId == null || senderId == null) return null;
+        byte[] data = null, payload = null, prk = null, okm = null, aad = null;
         try {
-            inflater.setInput(data);
-            ByteArrayOutputStream out = new ByteArrayOutputStream(data.length * 2);
-            byte[] buf = new byte[2048];
-            while (!inflater.finished() && !inflater.needsInput()) {
-                int n = inflater.inflate(buf);
-                if (n > 0) {
-                    out.write(buf, 0, n);
-                    if (out.size() > MAX_DECOMPRESSED_BYTES) return null;
-                } else if (n == 0 && (inflater.needsDictionary() || inflater.finished() || inflater.needsInput())) {
-                    break;
-                }
-            }
-            return out.size() > 0 ? out.toByteArray() : null;
+            data = plaintext.getBytes(StandardCharsets.UTF_8);
+            if (data.length > maxPlaintextBytes(preset)) return null;
+
+            int padded = ((data.length + 1 + preset.padBlock - 1) / preset.padBlock) * preset.padBlock;
+            payload = new byte[padded];
+            System.arraycopy(data, 0, payload, 0, data.length);
+            payload[data.length] = (byte) 0x80;
+
+            byte header = (byte) ((VERSION_MESSAGE << 4) | preset.index);
+            byte[] salt = new byte[SALT_LEN];
+            RANDOM.nextBytes(salt);
+
+            byte[] info = info("msg", preset, channelId, senderId);
+            prk = hkdfExtract(salt, master.getEncoded());
+            okm = hkdfExpand(prk, info, preset.keyBytes + NONCE_LEN);
+            aad = aad(header, salt, info);
+
+            byte[] ct = gcm(true, Arrays.copyOfRange(okm, 0, preset.keyBytes),
+                Arrays.copyOfRange(okm, preset.keyBytes, okm.length), preset.tagBits(), aad, payload, 0, payload.length);
+
+            byte[] wire = new byte[1 + SALT_LEN + ct.length];
+            wire[0] = header;
+            System.arraycopy(salt, 0, wire, 1, SALT_LEN);
+            System.arraycopy(ct, 0, wire, 1 + SALT_LEN, ct.length);
+            return PREFIX + Base64.encodeToString(wire, Base64.NO_WRAP | Base64.NO_PADDING);
         } catch (Exception e) {
             return null;
         } finally {
-            inflater.end();
+            wipe(data, payload, prk, okm, aad);
         }
     }
 
-    public static boolean encryptStream(java.io.InputStream in, java.io.OutputStream out, SecretKey key) {
-        if (in == null || out == null || key == null) return false;
+    public static String decrypt(String wire, SecretKey master, String channelId, String senderId) {
+        if (!looksEncrypted(wire) || master == null || channelId == null || senderId == null) return null;
+        byte[] prk = null, okm = null, payload = null;
         try {
-            byte[] iv = new byte[IV_LENGTH];
-            RANDOM.nextBytes(iv);
-            out.write(iv);
-            
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            
-            try (javax.crypto.CipherOutputStream cos = new javax.crypto.CipherOutputStream(out, cipher)) {
-                byte[] buffer = new byte[8192];
-                int n;
-                while ((n = in.read(buffer)) != -1) {
-                    cos.write(buffer, 0, n);
-                }
-                cos.flush();
+            byte[] raw = Base64.decode(wire.substring(PREFIX.length()), Base64.NO_WRAP);
+            if (raw.length < 1 + SALT_LEN + 1) return null;
+            int header = raw[0] & 0xFF;
+            if ((header >> 4) != VERSION_MESSAGE) return null;
+            Preset preset = Preset.fromIndex(header & 0x0F);
+            if (preset == null) return null;
+
+            int ctLen = raw.length - 1 - SALT_LEN;
+            if (ctLen < preset.tagBytes + preset.padBlock || (ctLen - preset.tagBytes) % preset.padBlock != 0) return null;
+
+            byte[] salt = Arrays.copyOfRange(raw, 1, 1 + SALT_LEN);
+            byte[] info = info("msg", preset, channelId, senderId);
+            prk = hkdfExtract(salt, master.getEncoded());
+            okm = hkdfExpand(prk, info, preset.keyBytes + NONCE_LEN);
+            byte[] aad = aad((byte) header, salt, info);
+
+            payload = gcm(false, Arrays.copyOfRange(okm, 0, preset.keyBytes),
+                Arrays.copyOfRange(okm, preset.keyBytes, okm.length), preset.tagBits(), aad, raw, 1 + SALT_LEN, ctLen);
+
+            int end = payload.length;
+            while (end > 0 && payload[end - 1] == 0) end--;
+            if (end == 0 || payload[end - 1] != (byte) 0x80) return null;
+            return new String(payload, 0, end - 1, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        } finally {
+            wipe(prk, okm, payload);
+        }
+    }
+
+    // -------------------------------------------------------------------- files
+
+    /**
+     * Streams plaintext in as 64 KiB chunks, each authenticated on its own. Chunks carry a counter
+     * and a final-chunk flag in their nonce, so reordering, dropping or truncating is detected.
+     */
+    public static boolean encryptStream(InputStream in, OutputStream out, SecretKey master, Preset preset,
+                                        String channelId, String senderId) {
+        if (in == null || out == null || master == null || preset == null || channelId == null || senderId == null) return false;
+        byte[] prk = null, okm = null;
+        try {
+            byte header = (byte) ((VERSION_FILE << 4) | preset.index);
+            byte[] salt = new byte[SALT_LEN];
+            RANDOM.nextBytes(salt);
+            byte[] info = info("file", preset, channelId, senderId);
+            prk = hkdfExtract(salt, master.getEncoded());
+            okm = hkdfExpand(prk, info, preset.keyBytes + FILE_PREFIX_LEN);
+            byte[] key = Arrays.copyOfRange(okm, 0, preset.keyBytes);
+            byte[] noncePrefix = Arrays.copyOfRange(okm, preset.keyBytes, okm.length);
+            byte[] aad = aad(header, salt, info);
+
+            out.write(header);
+            out.write(salt);
+
+            byte[] cur = new byte[FILE_CHUNK], next = new byte[FILE_CHUNK];
+            int curLen = readFully(in, cur);
+            long counter = 0;
+            while (true) {
+                int nextLen = curLen == FILE_CHUNK ? readFully(in, next) : 0;
+                boolean last = nextLen == 0;
+                out.write(gcm(true, key, chunkNonce(noncePrefix, counter, last), preset.tagBits(), aad, cur, 0, curLen));
+                if (last) break;
+                byte[] t = cur; cur = next; next = t;
+                curLen = nextLen;
+                if (++counter >= 0xFFFFFFFFL) return false;
             }
+            out.flush();
+            Arrays.fill(key, (byte) 0);
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            wipe(prk, okm);
         }
     }
 
-    public static boolean decryptStream(java.io.InputStream in, java.io.OutputStream out, SecretKey key) {
-        if (in == null || out == null || key == null) return false;
+    /** Output is written chunk by chunk, but only after that chunk has been authenticated. */
+    public static boolean decryptStream(InputStream in, OutputStream out, SecretKey master, String channelId, String senderId) {
+        if (in == null || out == null || master == null || channelId == null || senderId == null) return false;
+        byte[] prk = null, okm = null;
         try {
-            byte[] iv = new byte[IV_LENGTH];
-            int read = 0;
-            while (read < IV_LENGTH) {
-                int n = in.read(iv, read, IV_LENGTH - read);
-                if (n == -1) return false;
-                read += n;
+            int header = in.read();
+            if (header < 0 || (header >> 4) != VERSION_FILE) return false;
+            Preset preset = Preset.fromIndex(header & 0x0F);
+            if (preset == null) return false;
+            byte[] salt = new byte[SALT_LEN];
+            if (readFully(in, salt) != SALT_LEN) return false;
+
+            byte[] info = info("file", preset, channelId, senderId);
+            prk = hkdfExtract(salt, master.getEncoded());
+            okm = hkdfExpand(prk, info, preset.keyBytes + FILE_PREFIX_LEN);
+            byte[] key = Arrays.copyOfRange(okm, 0, preset.keyBytes);
+            byte[] noncePrefix = Arrays.copyOfRange(okm, preset.keyBytes, okm.length);
+            byte[] aad = aad((byte) header, salt, info);
+
+            int chunkCt = FILE_CHUNK + preset.tagBytes;
+            byte[] cur = new byte[chunkCt], next = new byte[chunkCt];
+            int curLen = readFully(in, cur);
+            if (curLen < preset.tagBytes) return false;
+            long counter = 0;
+            while (true) {
+                int nextLen = curLen == chunkCt ? readFully(in, next) : 0;
+                boolean last = nextLen == 0;
+                out.write(gcm(false, key, chunkNonce(noncePrefix, counter, last), preset.tagBits(), aad, cur, 0, curLen));
+                if (last) break;
+                byte[] t = cur; cur = next; next = t;
+                curLen = nextLen;
+                if (++counter >= 0xFFFFFFFFL) return false;
             }
-            
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
-            
-            try (javax.crypto.CipherInputStream cis = new javax.crypto.CipherInputStream(in, cipher)) {
-                byte[] buffer = new byte[8192];
-                int n;
-                while ((n = cis.read(buffer)) != -1) {
-                    out.write(buffer, 0, n);
-                }
-                out.flush();
-            }
+            out.flush();
+            Arrays.fill(key, (byte) 0);
             return true;
         } catch (Exception e) {
             return false;
+        } finally {
+            wipe(prk, okm);
         }
     }
 
-    public static byte[] encryptBytes(byte[] plaintext, SecretKey key) {
-        if (plaintext == null || key == null) return null;
-        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(plaintext);
-             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-            if (encryptStream(in, out, key)) {
-                return out.toByteArray();
-            }
-        } catch (Exception ignored) {}
-        return null;
+    public static byte[] encryptBytes(byte[] plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
+        if (plaintext == null) return null;
+        ByteArrayOutputStream out = new ByteArrayOutputStream(plaintext.length + 64);
+        return encryptStream(new ByteArrayInputStream(plaintext), out, master, preset, channelId, senderId) ? out.toByteArray() : null;
     }
 
-    public static byte[] decryptBytes(byte[] combined, SecretKey key) {
-        if (combined == null || key == null || combined.length < IV_LENGTH + (GCM_TAG_LENGTH / 8)) return null;
-        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(combined);
-             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-            if (decryptStream(in, out, key)) {
-                return out.toByteArray();
-            }
-        } catch (Exception ignored) {}
-        return null;
+    public static byte[] decryptBytes(byte[] wire, SecretKey master, String channelId, String senderId) {
+        if (wire == null) return null;
+        ByteArrayOutputStream out = new ByteArrayOutputStream(wire.length);
+        return decryptStream(new ByteArrayInputStream(wire), out, master, channelId, senderId) ? out.toByteArray() : null;
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private static byte[] chunkNonce(byte[] prefix, long counter, boolean last) {
+        byte[] n = new byte[NONCE_LEN];
+        System.arraycopy(prefix, 0, n, 0, FILE_PREFIX_LEN);
+        n[7] = (byte) (counter >>> 24);
+        n[8] = (byte) (counter >>> 16);
+        n[9] = (byte) (counter >>> 8);
+        n[10] = (byte) counter;
+        n[11] = (byte) (last ? 1 : 0);
+        return n;
+    }
+
+    private static int readFully(InputStream in, byte[] buf) throws IOException {
+        int n = 0;
+        while (n < buf.length) {
+            int r = in.read(buf, n, buf.length - n);
+            if (r < 0) break;
+            n += r;
+        }
+        return n;
+    }
+
+    private static byte[] gcm(boolean encrypt, byte[] key, byte[] nonce, int tagBits, byte[] aad,
+                              byte[] data, int off, int len) throws GeneralSecurityException {
+        Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+        c.init(encrypt ? Cipher.ENCRYPT_MODE : Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"),
+            new GCMParameterSpec(tagBits, nonce));
+        c.updateAAD(aad);
+        return c.doFinal(data, off, len);
+    }
+
+    private static byte[] info(String kind, Preset preset, String channelId, String senderId) {
+        byte[] label = ("dcenc2/" + kind).getBytes(StandardCharsets.UTF_8);
+        byte[] ch = channelId.getBytes(StandardCharsets.UTF_8);
+        byte[] se = senderId.getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(label, 0, label.length);
+        o.write(preset.index);
+        o.write(ch.length >>> 8);
+        o.write(ch.length);
+        o.write(ch, 0, ch.length);
+        o.write(se.length >>> 8);
+        o.write(se.length);
+        o.write(se, 0, se.length);
+        return o.toByteArray();
+    }
+
+    private static byte[] aad(byte header, byte[] salt, byte[] info) {
+        byte[] a = new byte[1 + salt.length + info.length];
+        a[0] = header;
+        System.arraycopy(salt, 0, a, 1, salt.length);
+        System.arraycopy(info, 0, a, 1 + salt.length, info.length);
+        return a;
+    }
+
+    private static byte[] hmac(byte[] key, byte[]... parts) throws GeneralSecurityException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(key, "HmacSHA256"));
+        for (byte[] p : parts) mac.update(p);
+        return mac.doFinal();
+    }
+
+    private static byte[] hkdfExtract(byte[] salt, byte[] ikm) throws GeneralSecurityException {
+        try {
+            return hmac(salt, ikm);
+        } finally {
+            Arrays.fill(ikm, (byte) 0);
+        }
+    }
+
+    private static byte[] hkdfExpand(byte[] prk, byte[] info, int length) throws GeneralSecurityException {
+        byte[] out = new byte[length];
+        byte[] t = new byte[0];
+        int pos = 0;
+        for (int i = 1; pos < length; i++) {
+            t = hmac(prk, t, info, new byte[]{(byte) i});
+            int n = Math.min(t.length, length - pos);
+            System.arraycopy(t, 0, out, pos, n);
+            pos += n;
+        }
+        Arrays.fill(t, (byte) 0);
+        return out;
+    }
+
+    private static void wipe(byte[]... arrays) {
+        for (byte[] a : arrays) if (a != null) Arrays.fill(a, (byte) 0);
     }
 }

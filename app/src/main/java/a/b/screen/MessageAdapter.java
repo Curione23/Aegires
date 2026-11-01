@@ -75,6 +75,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
 
     MainActivity activity;
     public javax.crypto.SecretKey keyOverride;
+    public String channelId;
     List<Message> messages;
     private List<Message> displayList = new ArrayList<>();
     ImageLoader imageLoader;
@@ -611,7 +612,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         frame.addView(playBtn, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
 
         final File[] videoFileHolder = new File[1];
-        loadEncryptedVideo(a.url, parent, (file, thumb) -> {
+        loadEncryptedVideo(a.url, senderOf(msg), parent, (file, thumb) -> {
             if (file == null) {
                 status.setText("\u26A0 Decrypt failed");
                 playBtn.setVisibility(View.GONE);
@@ -636,7 +637,11 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         void onResult(File videoFile, Bitmap thumbnail);
     }
 
-    private void loadEncryptedVideo(String url, ViewGroup parent, EncryptedVideoCallback onDone) {
+    private static String senderOf(Message msg) {
+        return msg != null && msg.author != null ? msg.author.id : null;
+    }
+
+    private void loadEncryptedVideo(String url, String senderId, ViewGroup parent, EncryptedVideoCallback onDone) {
         if (url == null || activity == null || key() == null) {
             onDone.onResult(null, null);
             return;
@@ -655,6 +660,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         }
 
         final javax.crypto.SecretKey key = key();
+        final String chId = channelId;
 
         emojiExecutor.execute(() -> {
             if (diskFile != null && diskFile.exists() && diskFile.length() > 0) {
@@ -677,7 +683,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 if (conn.getResponseCode() == 200 && diskFile != null) {
                     try (InputStream netIn = conn.getInputStream();
                          OutputStream fileOut = java.nio.file.Files.newOutputStream(diskFile.toPath())) {
-                        boolean success = Crypto.decryptStream(netIn, fileOut, key);
+                        boolean success = Crypto.decryptStream(netIn, fileOut, key, chId, senderId);
                         if (success && diskFile.exists() && diskFile.length() > 0) {
                             Bitmap thumb = extractVideoThumbnail(diskFile);
                             if (thumb != null) encryptedVideoThumbnailCache.put(cacheKey, thumb);
@@ -752,7 +758,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         status.setGravity(Gravity.CENTER);
         frame.addView(status, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER));
         final File[] fileHolder = new File[1];
-        loadEncryptedBitmap(a.url, parent, (diskFile, bmp, realW, realH) -> {
+        loadEncryptedBitmap(a.url, senderOf(msg), parent, (diskFile, bmp, realW, realH) -> {
             if (bmp == null) {
                 status.setText("\u26A0 Decrypt failed");
                 return;
@@ -837,7 +843,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         void onResult(File diskFile, Bitmap bitmap, int realWidth, int realHeight);
     }
 
-    private void loadEncryptedBitmap(String url, ViewGroup parent, EncryptedBitmapCallback onDone) {
+    private void loadEncryptedBitmap(String url, String senderId, ViewGroup parent, EncryptedBitmapCallback onDone) {
         if (url == null || activity == null || key() == null) {
             onDone.onResult(null, null, 0, 0);
             return;
@@ -859,6 +865,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         final int targetW = Math.max(pw > 0 ? pw - dp(112) : dp(248), dp(120));
         final int targetH = dp(400);
         final javax.crypto.SecretKey key = key();
+        final String chId = channelId;
 
         emojiExecutor.execute(() -> {
             Bitmap result = null;
@@ -884,7 +891,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                             while ((n = in.read(b)) > 0) buf.write(b, 0, n);
                             raw = buf.toByteArray();
                         }
-                        plain = Crypto.decryptBytes(raw, key);
+                        plain = Crypto.decryptBytes(raw, key, chId, senderId);
                         if (plain != null && diskFile != null) {
                             try { java.nio.file.Files.write(diskFile.toPath(), plain); } catch (Exception ignored) {}
                         }

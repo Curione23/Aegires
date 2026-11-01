@@ -15,6 +15,7 @@ import a.b.api.ApiClient;
 import a.b.api.GatewayClient;
 import a.b.screen.*;
 import a.b.util.ImageLoader;
+import a.b.util.Crypto;
 import a.b.util.DiskCache;
 import a.b.util.MemberListStore;
 import a.b.util.MentionStore;
@@ -40,6 +41,7 @@ public class MainActivity extends Activity {
     public String userId;
     public javax.crypto.SecretKey e2eeKey;
     public boolean e2eeEnabled;
+    public Crypto.Preset e2eePreset = Crypto.Preset.AES256;
     private static final long HEAP_REPORT_MS = 30000L;
     public GatewayClient gateway;
     public MentionStore mentions;
@@ -81,10 +83,12 @@ public class MainActivity extends Activity {
         imageLoader = new ImageLoader();
         mentions = new MentionStore(this);
         diskCache = new DiskCache(this);
+        Crypto.Preset saved = Crypto.Preset.fromIndex(getSharedPreferences("e2ee", MODE_PRIVATE).getInt("preset", Crypto.Preset.AES256.index));
+        if (saved != null) e2eePreset = saved;
 
-        String saved = TokenStore.load(this);
-        if (saved != null) {
-            setToken(saved);
+        String savedToken = TokenStore.load(this);
+        if (savedToken != null) {
+            setToken(savedToken);
             resetTo(new GuildListScreen());
         } else {
             navigate(new LoginScreen());
@@ -172,6 +176,12 @@ public class MainActivity extends Activity {
             }
         });
         gateway.connect();
+    }
+
+    public void setE2eePreset(Crypto.Preset preset) {
+        if (preset == null) return;
+        e2eePreset = preset;
+        getSharedPreferences("e2ee", MODE_PRIVATE).edit().putInt("preset", preset.index).apply();
     }
 
     public String selfId() { return selfUserId != null ? selfUserId : userId; }
