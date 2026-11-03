@@ -91,6 +91,7 @@ public class Message {
       att.proxyUrl = a.optString("proxy_url", null);
       att.width = a.optInt("width", 0);
       att.height = a.optInt("height", 0);
+      att.size = a.optLong("size", 0);
       msg.attachments.add(att);
     }
   }
@@ -203,6 +204,7 @@ public class Message {
     public String url, type, filename;
     public String proxyUrl;
     public int width, height;
+    public long size;
     public Attachment(String u, String t, String f) { url = u; type = t; filename = f; }
   }
 }

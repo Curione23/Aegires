@@ -25,6 +25,7 @@ import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.Guild;
 import a.b.util.Crypto;
+import a.b.util.MediaCache;
 import a.b.util.MentionStore;
 import a.b.util.Ui;
 
@@ -277,7 +278,11 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
         new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Log out")
             .setMessage("Clear the saved token and return to the login screen?")
-            .setPositiveButton("Log out", (dialog, which) -> { if (activity != null) activity.logout(); })
+            .setPositiveButton("Log out", (dialog, which) -> {
+                if (activity == null) return;
+                MediaCache.get(activity).clearSensitive();
+                activity.logout();
+            })
             .setNegativeButton("Cancel", null)
             .show();
     }
@@ -318,6 +323,7 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
                 if (key == null) { host.toast("Key derivation failed (not enough memory?)"); return; }
                 host.e2eeKey = key;
                 host.e2eeEnabled = true;
+                MediaCache.get(host).clearFailures();
                 host.toast("Encryption enabled for this session");
             });
         }, "key-derivation").start();
@@ -327,6 +333,7 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
         if (activity == null) return;
         activity.e2eeKey = null;
         activity.e2eeEnabled = false;
+        MediaCache.get(activity).clearSensitive();
         activity.toast("Encryption disabled");
     }
 

@@ -1,114 +1,74 @@
 package a.b.util;
 
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.util.LruCache;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
+/** Puts images into ImageViews; all fetching, caching and decoding lives in MediaCache. */
 public final class ImageLoader {
-    private static final int CACHE_BYTES = computeCacheBytes();
     private static final int DEFAULT_TARGET = 256;
-    private static final int MIN_HEAP_CACHE = 8 * 1024 * 1024;
-    private static final int MAX_HEAP_CACHE = 64 * 1024 * 1024;
-    private static final int COPY_BUF = 8192;
 
-    private static int computeCacheBytes() {
-        long target = Runtime.getRuntime().maxMemory() / 6;
-        return (int) Math.max(MIN_HEAP_CACHE, Math.min(MAX_HEAP_CACHE, target));
+    private static final class Binding {
+        final String url;
+        MediaCache.Handle handle = MediaCache.NOOP;
+        Binding(String url) { this.url = url; }
     }
 
-    private final LruCache<String, Bitmap> cache = new LruCache<String, Bitmap>(CACHE_BYTES) {
-        @Override protected int sizeOf(String key, Bitmap value) { return value.getByteCount(); }
-    };
-    
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    public void load(String url, ImageView imageView) { load(url, null, imageView); }
 
-    public void load(String url, ImageView imageView) { enqueue(url, imageView); }
-    public void loadNoCrop(String url, ImageView imageView) { enqueue(url, imageView); }
-    public long cacheBytes() { return cache.size(); }
-    public long cacheMax() { return CACHE_BYTES; }
+    public void loadNoCrop(String url, ImageView imageView) { load(url, null, imageView); }
 
-    private void enqueue(final String url, final ImageView imageView) {
+    public void load(final String url, String fallbackUrl, final ImageView imageView) {
         if (imageView == null) return;
+        cancel(imageView);
         if (url == null) {
             imageView.setTag(null);
             imageView.setImageDrawable(null);
             return;
         }
-        imageView.setTag(url);
-        Bitmap cached = cache.get(url);
-        if (cached != null) {
-            imageView.setImageBitmap(cached);
-            return;
-        }
+        final Binding binding = new Binding(url);
+        imageView.setTag(binding);
         imageView.setImageDrawable(null);
-        final int targetW = resolveTarget(imageView, true);
-        final int targetH = resolveTarget(imageView, false);
-        executor.submit(() -> {
-            Bitmap bitmap = fetchAndDecode(url, targetW, targetH);
-            if (bitmap == null) return;
-            cache.put(url, bitmap);
-            postIfStillBound(url, imageView, bitmap);
+
+        MediaCache.Spec spec = MediaCache.Spec.plain(url, resolveTarget(imageView, true), resolveTarget(imageView, false));
+        spec.fallbackUrl = fallbackUrl;
+        binding.handle = MediaCache.get(imageView.getContext()).loadBitmap(spec, new MediaCache.SimpleCallback() {
+            @Override public void onBitmap(Bitmap bitmap, int srcW, int srcH) {
+                if (imageView.getTag() == binding) imageView.setImageBitmap(bitmap);
+            }
         });
     }
 
-    private static Bitmap fetchAndDecode(String url, int targetW, int targetH) {
-        java.net.URLConnection conn = null;
-        try {
-            conn = new URL(url).openConnection();
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(15000);
-            conn.setRequestProperty("User-Agent", "Discord-Android/347012");
-            byte[] data;
-            try (InputStream is = conn.getInputStream()) { data = readAll(is); }
-            return decodeSampled(data, targetW, targetH);
-        } catch (Exception e) {
-            return null;
-        } finally {
-            if (conn instanceof java.net.HttpURLConnection) ((java.net.HttpURLConnection) conn).disconnect();
+    public static void cancel(ImageView imageView) {
+        Object tag = imageView.getTag();
+        if (tag instanceof Binding) {
+            ((Binding) tag).handle.cancel();
+            imageView.setTag(null);
         }
     }
 
-    private static byte[] readAll(InputStream is) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(16 * 1024);
-        byte[] buf = new byte[COPY_BUF];
-        int n;
-        while ((n = is.read(buf)) != -1) out.write(buf, 0, n);
-        return out.toByteArray();
+    public static void cancelTree(View root) {
+        if (root == null) return;
+        Object tag = root.getTag();
+        if (tag instanceof MediaCache.Handle) {
+            ((MediaCache.Handle) tag).cancel();
+            root.setTag(null);
+        } else if (root instanceof ImageView) {
+            cancel((ImageView) root);
+        }
+        if (root instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) root;
+            for (int i = 0; i < g.getChildCount(); i++) cancelTree(g.getChildAt(i));
+        }
     }
 
-    private static Bitmap decodeSampled(byte[] data, int targetW, int targetH) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-        BitmapFactory.Options opts = new BitmapFactory.Options();
-        opts.inSampleSize = computeSampleSize(bounds.outWidth, bounds.outHeight, targetW, targetH);
-        return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
-    }
+    public long cacheBytes() { return lastCache != null ? lastCache.memoryBytes() : 0; }
+    public long cacheMax() { return lastCache != null ? lastCache.memoryMax() : 0; }
 
-    private static void postIfStillBound(final String url, final ImageView imageView, final Bitmap bitmap) {
-        if (!url.equals(imageView.getTag())) return;
-        imageView.post(() -> {
-            if (url.equals(imageView.getTag())) imageView.setImageBitmap(bitmap);
-        });
-    }
+    private static volatile MediaCache lastCache;
 
-    private static int computeSampleSize(int inW, int inH, int reqW, int reqH) {
-        if (inW <= 0 || inH <= 0 || reqW <= 0 || reqH <= 0) return 1;
-        if (inW <= reqW && inH <= reqH) return 1;
-        int sample = 1;
-        int halfW = inW / 2;
-        int halfH = inH / 2;
-        while (halfW / sample >= reqW && halfH / sample >= reqH) sample *= 2;
-        return sample;
-    }
+    static void remember(MediaCache c) { lastCache = c; }
 
     private static int resolveTarget(ImageView imageView, boolean horizontal) {
         int laidOut = horizontal ? imageView.getWidth() : imageView.getHeight();
