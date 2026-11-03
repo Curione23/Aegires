@@ -96,6 +96,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     public static final LruCache<String, int[]> mediaSizeCache = new LruCache<>(200);
     public static final ConcurrentHashMap<String, int[]> messageDimensionCache = new ConcurrentHashMap<>();
     final Set<String> loadingEmojis = syncSet();
+    final Set<String> approvedMedia = syncSet();
     final Set<String> pendingMemberFetches = syncSet();
     final Set<String> checkedMembers = syncSet();
     final Set<String> pendingUserFetches = syncSet();
@@ -599,11 +600,15 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         final int[] size;
         private MediaCache.Handle loadHandle = MediaCache.NOOP, openHandle = MediaCache.NOOP;
         private int state = LOADING;
+        private final String consentKey;
 
         EncryptedSlot(Message.Attachment a, Message msg, ViewGroup parent, boolean video) {
             this.a = a;
             this.msg = msg;
             this.video = video;
+            String base = a.url == null ? "" : a.url;
+            int q = base.indexOf('?');
+            consentKey = q >= 0 ? base.substring(0, q) : base;
             int w = a.width, h = a.height;
             if (msg != null && msg.id != null) {
                 int[] dim = messageDimensionCache.get(msg.id);
@@ -618,12 +623,12 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             iv.setScaleType(video ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
             frame.addView(iv, new FrameLayout.LayoutParams(MATCH, MATCH));
 
-            status = tv("", MUTED, 12);
+            status = overlay("", MUTED, 12);
             status.setGravity(Gravity.CENTER);
             status.setPadding(dp(12), 0, dp(12), 0);
             frame.addView(status, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER));
 
-            playBtn = tv("\u25B6", Color.WHITE, 30);
+            playBtn = overlay("\u25B6", Color.WHITE, 30);
             playBtn.setVisibility(View.GONE);
             frame.addView(playBtn, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
 
@@ -635,7 +640,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         }
 
         View begin() {
-            start(false);
+            start(approvedMedia.contains(consentKey));
             return frame;
         }
 
@@ -700,7 +705,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
 
         private void onClick() {
             if (state == LOADED) openFull();
-            else if (state == CONFIRM || state == FAILED) start(true);
+            else if (state == CONFIRM || state == FAILED) {
+                approvedMedia.add(consentKey);
+                start(true);
+            }
         }
 
         private void openFull() {
@@ -866,10 +874,10 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
             imageLoader.load(preview, video ? null : openUrl, iv);
             frame.addView(iv, new FrameLayout.LayoutParams(MATCH, MATCH));
         } else if (preview != null) {
-            frame.addView(tv("\uD83D\uDDBC", 0xAAFFFFFF, 14), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
+            frame.addView(overlay("\uD83D\uDDBC", 0xAAFFFFFF, 14), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
         }
         if (video) {
-            frame.addView(tv("\u25B6", Color.WHITE, 30), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
+            frame.addView(overlay("\u25B6", Color.WHITE, 30), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
         }
         frame.setOnClickListener(v -> showFullscreen(openUrl, video));
         return frame;
@@ -988,6 +996,14 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         LinearLayout l = new LinearLayout(activity);
         l.setOrientation(orientation);
         return l;
+    }
+
+    private TextView overlay(CharSequence text, int color, float sp) {
+        TextView view = new TextView(activity);
+        view.setText(text);
+        view.setTextColor(color);
+        view.setTextSize(sp);
+        return view;
     }
 
     private TextView tv(CharSequence text, int color, float sp) {
