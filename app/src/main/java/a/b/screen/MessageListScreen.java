@@ -448,8 +448,10 @@ public class MessageListScreen implements Screen {
                 boolean stick = isInitialLoad || atBottom();
                 boolean changed = merge(batch, false);
                 if (changed) {
-                    adapter.submitList(new ArrayList<>(messages));
-                    if (stick) scrollToBottom();
+                    messageList.post(() -> {
+                        adapter.submitList(new ArrayList<>(messages));
+                        if (stick) scrollToBottom();
+                    });
                     fetchMissingRoles();
                 }
                 if (changed && after != null && batch.size() >= PAGE_SIZE) loadNewMessages();
@@ -535,8 +537,8 @@ public class MessageListScreen implements Screen {
 
     private void prepend(List<Message> batch) {
         final int spinnerCount = loadingAdapter.getItemCount();
-        String anchorId = null;
-        int offset = 0;
+        String tempAnchorId = null;
+        int tempOffset = 0;
         for (int i = 0; i < messageList.getChildCount(); i++) {
             View child = messageList.getChildAt(i);
             if (child == null) continue;
@@ -544,20 +546,28 @@ public class MessageListScreen implements Screen {
             if (pos == RecyclerView.NO_POSITION) continue;
             int msgIdx = pos - spinnerCount;
             if (msgIdx >= 0 && msgIdx < messages.size()) {
-                anchorId = messages.get(msgIdx).id;
-                offset = child.getTop();
+                tempAnchorId = messages.get(msgIdx).id;
+                tempOffset = child.getTop();
                 break;
             }
         }
+        
+        final String anchorId = tempAnchorId;
+        final int finalOffset = tempOffset;
+        
         loadingOld = false;
         updateLoadMoreButton();
         if (!merge(batch, true)) return;
-        adapter.submitList(new ArrayList<>(messages));
-        if (anchorId == null) return;
-        final int newMsgIdx = indexOf(anchorId);
-        if (newMsgIdx < 0) return;
-        final int finalOffset = offset;
+        
+        final ArrayList<Message> newList = new ArrayList<>(messages);
+        
         messageList.post(() -> {
+            adapter.submitList(newList);
+            
+            if (anchorId == null) return;
+            final int newMsgIdx = indexOf(anchorId);
+            if (newMsgIdx < 0) return;
+            
             int spinnerAfter = loadingAdapter.getItemCount();
             int concatPos = spinnerAfter + newMsgIdx;
             if (layoutManager.getItemCount() > concatPos) {
@@ -1030,8 +1040,10 @@ public class MessageListScreen implements Screen {
         if (m != null && m.author != null && m.author.id != null) typingUsers.remove(m.author.id);
         updateTypingIndicator();
         if (merge(Collections.singletonList(m), false)) {
-            adapter.submitList(new ArrayList<>(messages));
-            if (stick) scrollToBottom();
+            messageList.post(() -> {
+                adapter.submitList(new ArrayList<>(messages));
+                if (stick) scrollToBottom();
+            });
         }
     }
 
@@ -1041,15 +1053,17 @@ public class MessageListScreen implements Screen {
         int i = incoming.id == null ? -1 : indexOf(incoming.id);
         if (i < 0) return;
         messages.get(i).mergeFrom(incoming);
-        adapter.invalidateMessage(incoming.id);
+        messageList.post(() -> adapter.invalidateMessage(incoming.id));
     }
 
     private void gatewayDelete(String id) {
         if (id == null || !messageIds.remove(id)) return;
         int i = indexOf(id);
         if (i >= 0) messages.remove(i);
-        adapter.parsedContentCache.remove(id);
-        adapter.submitList(new ArrayList<>(messages));
+        messageList.post(() -> {
+            adapter.parsedContentCache.remove(id);
+            adapter.submitList(new ArrayList<>(messages));
+        });
     }
 
     @Override 
