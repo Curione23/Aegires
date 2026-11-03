@@ -162,28 +162,32 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         });
         displayList = snapshot;
         messages = new ArrayList<>(snapshot);
-        result.dispatchUpdatesTo(this);
+        ui.post(() -> result.dispatchUpdatesTo(MessageAdapter.this));
     }
 
     public void invalidateMessage(String id) {
         if (id == null) return;
         parsedContentCache.remove(id);
-        for (int i = 0; i < displayList.size(); i++) {
-            Message message = displayList.get(i);
-            if (message != null && id.equals(message.id)) notifyItemChanged(i);
-        }
+        ui.post(() -> {
+            for (int i = 0; i < displayList.size(); i++) {
+                Message message = displayList.get(i);
+                if (message != null && id.equals(message.id)) notifyItemChanged(i);
+            }
+        });
     }
 
     public void refreshUser(String userId) {
         if (userId == null) return;
-        for (int i = 0; i < displayList.size(); i++) {
-            Message message = displayList.get(i);
-            if (message != null && message.author != null && userId.equals(message.author.id)) {
-                if (message.id != null) parsedContentCache.remove(message.id);
-                notifyItemChanged(i);
+        ui.post(() -> {
+            for (int i = 0; i < displayList.size(); i++) {
+                Message message = displayList.get(i);
+                if (message != null && message.author != null && userId.equals(message.author.id)) {
+                    if (message.id != null) parsedContentCache.remove(message.id);
+                    notifyItemChanged(i);
+                }
             }
-        }
-    }
+        });
+    }    
 
     public void notifyChangedCompat() { submitList(new ArrayList<>(messages)); }
 
@@ -469,34 +473,36 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private void invalidateMentions(String id, boolean isUser) {
-        String prefix = isUser ? "<@" : "<#";
-        for (int i = 0; i < displayList.size(); i++) {
-            Message m = displayList.get(i);
-            if (m == null || m.id == null) continue;
-            boolean affected = referencesId(m.content, id, prefix, isUser);
-            if (!affected && m.embeds != null) {
-                for (Embed e : m.embeds) {
-                    if (e == null) continue;
-                    if (referencesId(e.title, id, prefix, isUser) || referencesId(e.description, id, prefix, isUser)) {
-                        affected = true;
-                        break;
-                    }
-                    if (e.fields != null) {
-                        for (EmbedField f : e.fields) {
-                            if (f != null && referencesId(f.value, id, prefix, isUser)) {
-                                affected = true;
-                                break;
+        ui.post(() -> {
+            String prefix = isUser ? "<@" : "<#";
+            for (int i = 0; i < displayList.size(); i++) {
+                Message m = displayList.get(i);
+                if (m == null || m.id == null) continue;
+                boolean affected = referencesId(m.content, id, prefix, isUser);
+                if (!affected && m.embeds != null) {
+                    for (Embed e : m.embeds) {
+                        if (e == null) continue;
+                        if (referencesId(e.title, id, prefix, isUser) || referencesId(e.description, id, prefix, isUser)) {
+                            affected = true;
+                            break;
+                        }
+                        if (e.fields != null) {
+                            for (EmbedField f : e.fields) {
+                                if (f != null && referencesId(f.value, id, prefix, isUser)) {
+                                    affected = true;
+                                    break;
+                                }
                             }
                         }
+                        if (affected) break;
                     }
-                    if (affected) break;
+                }
+                if (affected) {
+                    parsedContentCache.remove(m.id);
+                    notifyItemChanged(i);
                 }
             }
-            if (affected) {
-                parsedContentCache.remove(m.id);
-                notifyItemChanged(i);
-            }
-        }
+        });
     }
 
     private static boolean referencesId(String text, String id, String prefix, boolean isUser) {
@@ -527,13 +533,15 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
     }
 
     private void invalidateEmoji(List<String> msgIds) {
-        for (String mid : msgIds) {
-            parsedContentCache.remove(mid);
-            for (int i = 0; i < displayList.size(); i++) {
-                Message m = displayList.get(i);
-                if (m != null && mid.equals(m.id)) notifyItemChanged(i);
+        ui.post(() -> {
+            for (String mid : msgIds) {
+                parsedContentCache.remove(mid);
+                for (int i = 0; i < displayList.size(); i++) {
+                    Message m = displayList.get(i);
+                    if (m != null && mid.equals(m.id)) notifyItemChanged(i);
+                }
             }
-        }
+        });
     }
 
     private View attachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
