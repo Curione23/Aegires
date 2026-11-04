@@ -217,6 +217,7 @@ public class MessageListScreen implements Screen {
 
     private View buildList() {
         layoutManager = new LinearLayoutManager(activity);
+        layoutManager.setStackFromEnd(true);
         messageList = new RecyclerView(activity);
         messageList.setLayoutManager(layoutManager);
         messageList.setBackgroundColor(Ui.BG);
