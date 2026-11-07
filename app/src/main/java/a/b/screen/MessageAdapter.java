@@ -1,111 +1,71 @@
 package a.b.screen;
 
-import android.content.Context;
-import android.graphics.*;
-import android.graphics.drawable.*;
+import android.graphics.Bitmap;
 import android.os.Handler;
-import android.os.IBinder;
 import android.os.Looper;
-import android.text.*;
-import android.text.format.DateUtils;
-import android.text.method.LinkMovementMethod;
-import android.text.style.*;
 import android.util.LruCache;
-import android.view.*;
-import android.view.inputmethod.InputMethodManager;
-import android.webkit.WebSettings;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
-import android.widget.*;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
-import android.net.Uri;
-import java.io.InputStream;
-import java.io.File;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.*;
 import a.b.MainActivity;
-import a.b.api.ApiClient;
-import a.b.model.*;
-import a.b.util.*;
-import static android.widget.LinearLayout.HORIZONTAL;
-import static android.widget.LinearLayout.VERTICAL;
+import a.b.model.Embed;
+import a.b.model.Message;
+import a.b.util.ImageLoader;
+import a.b.util.MediaCache;
 
-public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageViewHolder> {
-    private static final int GROUP_GAP_MS = 7 * 60 * 1000;
+public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
+    static final int MATCH = -1, WRAP = -2;
+    static final int MENTION_FG = 0xFFC9CDFB, MENTION_BG = 0x4D5865F2;
+    static final int EVERYONE_FG = 0xFFFEE75C, EVERYONE_BG = 0x4DFEE75C;
+    static final int EMBED_BG = 0xFF2B2D31;
+    static final int TEXT = 0xFFDBDEE1, MUTED = 0xFF949BA4, LINK_FG = 0xFF00A8FC;
+    static final int BG = 0xFF313338;
+    static final String CDN = "https://cdn.discordapp.com/";
+
     private static final int CACHE_MAX = 300;
-    private static final int MATCH = -1, WRAP = -2;
-    private static final String USER_AGENT = "Discord-Android/347012";
-    private static final String CDN = "https://cdn.discordapp.com/";
-    private static final int MENTION_FG = 0xFFC9CDFB, MENTION_BG = 0x4D5865F2;
-    private static final int EVERYONE_FG = 0xFFFEE75C, EVERYONE_BG = 0x4DFEE75C;
-    private static final int PANEL = 0xFF1E1F22, EMBED_BG = 0xFF2B2D31;
-    private static final int TEXT = 0xFFDBDEE1, MUTED = 0xFF949BA4, LINK_FG = 0xFF00A8FC;
-    private static final int BG = 0xFF313338, HIGHLIGHT_BG = 0x1AF0B232;
-
-    private static final Pattern CUSTOM_EMOJI = Pattern.compile("<a?:\\w+:(\\d+)>");
-    private static final Pattern USER_MENTION = Pattern.compile("<@!?(\\d+)>");
-    private static final Pattern ROLE_MENTION = Pattern.compile("<@&(\\d+)>");
-    private static final Pattern CHANNEL_MENTION = Pattern.compile("<#(\\d+)>");
-    private static final Pattern EVERYONE_HERE = Pattern.compile("(?<![\\w@])@(everyone|here)\\b");
-    private static final Pattern TIMESTAMP = Pattern.compile("<t:(-?\\d{1,12})(?::([tTdDfFR]))?>");
-    private static final Pattern SLASH_COMMAND = Pattern.compile("</([\\w-]+(?: [\\w-]+){0,2}):\\d+>");
-    private static final Pattern GUILD_NAV = Pattern.compile("<id:(customize|browse|guide|linked-roles)>");
-    private static final Pattern ATTACHMENT_ID = Pattern.compile("/attachments/[^/]+/([^/]+)/");
-
-    private static final String STYLES = "tTdDfF";
-    private static final String[] DATE_PATTERNS = {
-        "HH:mm", "HH:mm:ss", "dd/MM/yyyy", "dd MMMM yyyy",
-        "dd MMMM yyyy HH:mm", "EEEE, dd MMMM yyyy HH:mm"
-    };
-
-    private interface Text { CharSequence of(MatchResult m); }
-    private interface Styler { void apply(SpannableStringBuilder sb, int start, int end, MatchResult m); }
+    private static final int GROUP_GAP_MS = 7 * 60 * 1000;
 
     public interface MessageLongPressListener {
         void onMessageLongPress(Message msg, View anchor);
     }
 
-    MainActivity activity;
     public javax.crypto.SecretKey keyOverride;
     public String channelId;
-    List<Message> messages;
-    private List<Message> displayList = new ArrayList<>();
-    ImageLoader imageLoader;
-    final String guildId;
-    final float density;
-    final int emojiSize, jumboSize, bodyIndent, avatarSize;
-
     public final Map<String, CharSequence> parsedContentCache = Collections.synchronizedMap(
         new LinkedHashMap<String, CharSequence>(64, 0.75f, true) {
             @Override protected boolean removeEldestEntry(Map.Entry<String, CharSequence> eldest) {
                 return size() > CACHE_MAX;
             }
         });
+    public final ExecutorService emojiExecutor = Executors.newFixedThreadPool(4);
 
-    public final LruCache<String, Bitmap> emojiCache = new LruCache<>(100);
-    final ConcurrentHashMap<String, Set<String>> emojiMessageMap = new ConcurrentHashMap<>();
-    
-    public static final LruCache<String, int[]> mediaSizeCache = new LruCache<>(200);
-    public static final ConcurrentHashMap<String, int[]> messageDimensionCache = new ConcurrentHashMap<>();
-    final Set<String> loadingEmojis = syncSet();
-    final Set<String> approvedMedia = syncSet();
-    final Set<String> pendingMemberFetches = syncSet();
-    final Set<String> checkedMembers = syncSet();
-    final Set<String> pendingUserFetches = syncSet();
-    final Set<String> failedUserFetches = syncSet();
-    final Set<String> pendingChannelFetches = syncSet();
-    final Set<String> failedChannelFetches = syncSet();
-    final ExecutorService emojiExecutor = Executors.newFixedThreadPool(4);
-    private final Handler ui = new Handler(Looper.getMainLooper());
-    private MessageLongPressListener longPressListener;
+    MainActivity activity;
+    List<Message> messages;
+    List<Message> displayList;
+    ImageLoader imageLoader;
+    String guildId;
+    float density;
+    int emojiSize, jumboSize, bodyIndent, avatarSize;
+    final Handler ui = new Handler(Looper.getMainLooper());
+    MessageLongPressListener longPressListener;
+
+    final EmojiRegistry emojiRegistry;
+    final MentionRegistry mentionRegistry;
+    final MessageMediaViewFactory mediaFactory;
+    final DiscordMessageRenderer renderer;
+    final AttachmentViewFactory attachmentFactory;
+    final EmbedViewFactory embedFactory;
+    final MessageBinder binder;
 
     public MessageAdapter(MainActivity activity, List<Message> messages, ImageLoader loader, String guildId) {
         this.activity = activity;
@@ -119,23 +79,30 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         jumboSize = dp(48);
         bodyIndent = dp(52);
         if (activity != null) MediaCache.get(activity.getApplicationContext());
-    }
 
-    private javax.crypto.SecretKey key() {
-        return keyOverride != null ? keyOverride : (activity != null ? activity.e2eeKey : null);
+        emojiRegistry = new EmojiRegistry(this);
+        mentionRegistry = new MentionRegistry(this);
+        mediaFactory = new MessageMediaViewFactory(this);
+        renderer = new DiscordMessageRenderer(this);
+        attachmentFactory = new AttachmentViewFactory(this);
+        embedFactory = new EmbedViewFactory(this);
+        binder = new MessageBinder(this);
     }
 
     public void setLongPressListener(MessageLongPressListener l) { longPressListener = l; }
 
     @Override public int getItemCount() { return displayList.size(); }
+
     @Override public void onViewRecycled(MessageViewHolder holder) {
         ImageLoader.cancelTree(holder.itemView);
         super.onViewRecycled(holder);
     }
-    @Override public MessageViewHolder onCreateViewHolder(ViewGroup parent, int viewType) { return new MessageViewHolder(); }
 
-    @Override
-    public void onBindViewHolder(MessageViewHolder h, int pos) {
+    @Override public MessageViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        return new MessageViewHolder(this);
+    }
+
+    @Override public void onBindViewHolder(MessageViewHolder h, int pos) {
         if (activity == null || pos < 0 || pos >= displayList.size()) return;
         Message msg = displayList.get(pos);
         if (msg == null) return;
@@ -187,292 +154,58 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                 }
             }
         });
-    }    
+    }
 
     public void notifyChangedCompat() { submitList(new ArrayList<>(messages)); }
 
-    private void bindHeader(MessageViewHolder h, Message msg, boolean show) {
-        h.header.setVisibility(show ? View.VISIBLE : View.GONE);
-        h.avatar.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
-        ViewGroup.LayoutParams alp = h.avatar.getLayoutParams();
-        if (alp instanceof ViewGroup.MarginLayoutParams) {
-            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) alp;
-            int wantH = show ? avatarSize : 0;
-            int wantTop = show ? dp(2) : 0;
-            if (mlp.height != wantH || mlp.topMargin != wantTop) {
-                mlp.height = wantH;
-                mlp.topMargin = wantTop;
-                h.avatar.setLayoutParams(mlp);
+    int dp(int v) { return (int) (v * density); }
+
+    public int emojiCacheSize() { return emojiRegistry.size(); }
+
+    javax.crypto.SecretKey key() {
+        return keyOverride != null ? keyOverride : (activity != null ? activity.e2eeKey : null);
+    }
+
+    CharSequence render(String raw, Message msg) { return renderer.render(raw, msg); }
+    CharSequence replyPreview(Message m) { return binder.replyPreview(m); }
+    void bindHeader(MessageViewHolder h, Message msg, boolean show) { binder.bindHeader(h, msg, show); }
+    boolean mentionsSelf(Message msg) { return binder.mentionsSelf(msg); }
+    View attachmentView(Message.Attachment a, Message msg, ViewGroup parent) { return attachmentFactory.build(a, msg, parent); }
+    View embedView(Embed e, Message msg, ViewGroup parent) { return embedFactory.build(e, msg, parent); }
+
+    void hideKeyboard() {
+        if (activity == null) return;
+        try {
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
+                activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm == null) return;
+            View focus = activity.getCurrentFocus();
+            android.os.IBinder token = focus != null ? focus.getWindowToken() : null;
+            if (token == null && activity.getWindow() != null && activity.getWindow().getDecorView() != null) {
+                token = activity.getWindow().getDecorView().getWindowToken();
             }
-        }
-        h.root.setPadding(dp(12), show ? dp(10) : 0, dp(12), dp(2));
-        if (!show) return;
-        h.name.setText(displayName(msg));
-        h.name.setTextColor(getAuthorColor(msg));
-
-        String timeStr = TimeUtils.messageTime(msg.timestamp);
-        h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
-
-        String uid = msg.author != null ? msg.author.id : null;
-        h.avatar.setBackground(Ui.oval(Ui.avatarColor(uid)));
-        h.avatar.setClipToOutline(true);
-        boolean hasAvatar = activity != null && imageLoader != null && msg.author != null && isReal(msg.author.avatar);
-        if (imageLoader != null) {
-            imageLoader.load(hasAvatar ? CDN + "avatars/" + uid + "/" + msg.author.avatar + ".png?size=128" : null, h.avatar);
-        }
-        View.OnClickListener open = v -> openProfile(uid);
-        h.avatar.setOnClickListener(open);
-        h.name.setOnClickListener(open);
+            if (token != null) imm.hideSoftInputFromWindow(token, 0);
+            if (focus != null) focus.clearFocus();
+        } catch (Exception ignored) {}
     }
 
-    private boolean mentionsSelf(Message msg) {
-        String self = activity != null ? activity.selfId() : null;
-        if (self == null || msg == null) return false;
-        if (msg.author != null && self.equals(msg.author.id)) return false;
-        return msg.mentionedUserIds != null && msg.mentionedUserIds.contains(self);
+    void showFullscreen(WebView web) {
+        if (activity != null) activity.showFullscreen(web);
     }
 
-    private int getAuthorColor(Message msg) {
-        if (activity == null) return Color.WHITE;
-        List<String> roles = msg.roleIds;
-        if ((roles == null || roles.isEmpty()) && msg.author != null && msg.author.id != null && activity.userRoleCache != null) {
-            roles = activity.userRoleCache.get(msg.author.id);
-        }
-        if (roles == null || roles.isEmpty() || activity.roleCache == null) return Color.WHITE;
-        Role highest = null;
-        for (String roleId : roles) {
-            Role r = activity.roleCache.get(roleId);
-            if (r != null && (highest == null || r.position > highest.position)) highest = r;
-        }
-        return highest != null && highest.color != 0 ? highest.color | 0xFF000000 : Color.WHITE;
-    }
-
-    private static boolean sameGroup(Message prev, Message cur) {
-        if (prev.author == null || cur.author == null || cur.replyToMessageId != null) return false;
-        long difference = cur.timestamp - prev.timestamp;
-        return Objects.equals(prev.author.id, cur.author.id) && difference >= 0 && difference <= GROUP_GAP_MS;
-    }
-
-    private String displayName(Message message) {
-        String nick = null;
-        if (activity != null && message.author != null && message.author.id != null) {
-            String cacheKey = guildId != null ? guildId + "_" + message.author.id : message.author.id;
-            nick = activity.userNickCache != null ? activity.userNickCache.get(cacheKey) : null;
-            if (nick == null && guildId != null) {
-                nick = activity.userNickCache.get(message.author.id);
-            }
-        }
-        String name = isReal(message.memberNick) ? message.memberNick :
-                      isReal(nick) ? nick :
-                      message.author == null ? "System" :
-                      isReal(message.author.globalName) ? message.author.globalName : message.author.username;
-        if (activity != null && message.author != null && message.author.id != null && activity.userNameCache != null) {
-            String global = message.author == null ? null
-                : isReal(message.author.globalName) ? message.author.globalName : message.author.username;
-            if (isReal(global)) activity.userNameCache.put(message.author.id, global);
-        }
-        return name;
-    }
-
-    private CharSequence replyPreview(Message m) {
-        SpannableStringBuilder sb = new SpannableStringBuilder("\u21B3 ");
-        String authorName = m.replyToAuthorName;
-        if (activity != null && m.replyToAuthorId != null) {
-            String cacheKey = guildId != null ? guildId + "_" + m.replyToAuthorId : m.replyToAuthorId;
-            String cachedNick = activity.userNickCache != null ? activity.userNickCache.get(cacheKey) : null;
-            if (cachedNick == null && guildId != null) {
-                cachedNick = activity.userNickCache.get(m.replyToAuthorId);
-            }
-            if (isReal(cachedNick)) {
-                authorName = cachedNick;
-            }
-        }
-        sb.append(authorName != null ? authorName : "unknown");
-        sb.setSpan(new StyleSpan(Typeface.BOLD), 2, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.append("  ");
-        if (m.replyToMissing) {
-            sb.append("Original message was deleted");
-        } else {
-            String t = m.replyToContent == null ? "" : m.replyToContent.replace('\n', ' ');
-            if (t.length() > 80) t = t.substring(0, 80) + "\u2026";
-            sb.append(t.trim().isEmpty() ? "(no text)" : t);
-        }
-        return sb;
-    }
-
-    private void openProfile(String uid) {
-        if (uid != null && activity != null) activity.navigate(new ProfileScreen(uid, guildId));
-    }
-
-    private CharSequence render(String raw, Message msg) {
-        return render(raw, msg, true);
-    }
-
-    private CharSequence render(String raw, Message msg, boolean markdown) {
-        if (raw == null || raw.isEmpty()) return "";
-        SpannableStringBuilder sb = markdown ? DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
-        int jumbo = markdown ? emojiOnly(raw) : 0;
-        if (msg.id != null) emojis(sb, msg.id, jumbo != 0);
-        mentions(sb, msg);
-        timestamps(sb);
-        if (jumbo == 2) span(sb, 0, sb.length(), new RelativeSizeSpan(2.4f));
-        return sb;
-    }
-
-    private static boolean isEmojiCodePoint(int cp) {
-        return (cp >= 0x1F000 && cp <= 0x1FAFF) || (cp >= 0x2190 && cp <= 0x21FF) || (cp >= 0x2300 && cp <= 0x23FF)
-            || (cp >= 0x2600 && cp <= 0x27BF) || (cp >= 0x2900 && cp <= 0x297F) || (cp >= 0x2B00 && cp <= 0x2BFF)
-            || cp == 0xA9 || cp == 0xAE || cp == 0x203C || cp == 0x2049 || cp == 0x2122 || cp == 0x2139
-            || cp == 0x24C2 || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299;
-    }
-
-    private static int emojiOnly(String raw) {
-        String t = CUSTOM_EMOJI.matcher(raw).replaceAll("\u0001");
-        int count = 0;
-        boolean unicode = false;
-        for (int i = 0; i < t.length(); ) {
-            int cp = t.codePointAt(i);
-            i += Character.charCount(cp);
-            if (Character.isWhitespace(cp)) continue;
-            if (cp == 0x1) { count++; continue; }
-            if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || (cp >= 0x1F3FB && cp <= 0x1F3FF)) continue;
-            if (!isEmojiCodePoint(cp)) return 0;
-            count++;
-            unicode = true;
-        }
-        if (count == 0 || count > 27) return 0;
-        return unicode ? 2 : 1;
-    }
-
-    private void emojis(SpannableStringBuilder sb, String msgId, boolean jumbo) {
-        final int size = jumbo ? jumboSize : emojiSize;
-        sub(sb, CUSTOM_EMOJI, m -> " ", (b, s, e, m) -> {
-            String id = m.group(1);
-            Bitmap bmp = emojiCache.get(id);
-            Drawable d;
-            if (bmp != null) {
-                d = new BitmapDrawable(activity.getResources(), bmp);
-            } else {
-                d = new ColorDrawable(Color.TRANSPARENT);
-                Set<String> waiting = emojiMessageMap.get(id);
-                if (waiting == null) {
-                    Set<String> fresh = syncSet();
-                    waiting = emojiMessageMap.putIfAbsent(id, fresh);
-                    if (waiting == null) waiting = fresh;
+    void invalidateEmojis(List<String> msgIds) {
+        ui.post(() -> {
+            for (String mid : msgIds) {
+                parsedContentCache.remove(mid);
+                for (int i = 0; i < displayList.size(); i++) {
+                    Message m = displayList.get(i);
+                    if (m != null && mid.equals(m.id)) notifyItemChanged(i);
                 }
-                waiting.add(msgId);
-                boolean animated = m.group().charAt(1) == 'a';
-                loadEmoji(id, CDN + "emojis/" + id + (animated ? ".gif" : ".png") + "?size=128");
-            }
-            d.setBounds(0, 0, size, size);
-            span(b, s, e, new ImageSpan(d, ImageSpan.ALIGN_BOTTOM));
-        });
-    }
-
-    private void mentions(SpannableStringBuilder sb, Message msg) {
-        Styler chip = (b, s, e, m) -> span(b, s, e, new ForegroundColorSpan(MENTION_FG), new BackgroundColorSpan(MENTION_BG));
-        sub(sb, CHANNEL_MENTION, m -> "#" + resolveChannel(m.group(1)), chip);
-        sub(sb, ROLE_MENTION, m -> {
-            Role role = activity != null && activity.roleCache != null ? activity.roleCache.get(m.group(1)) : null;
-            return "@" + (role != null && isReal(role.name) ? role.name : "role");
-        }, chip);
-        sub(sb, USER_MENTION, m -> "@" + resolveUser(m.group(1), msg), (b, s, e, m) -> {
-            chip.apply(b, s, e, m);
-            String id = m.group(1);
-            span(b, s, e, new Click(() -> openProfile(id)));
-        });
-        sub(sb, SLASH_COMMAND, m -> "/" + m.group(1), chip);
-        sub(sb, GUILD_NAV, m -> {
-            switch (m.group(1)) {
-                case "customize": return "Channels & Roles";
-                case "browse": return "Browse Channels";
-                case "guide": return "Server Guide";
-                default: return "Linked Roles";
-            }
-        }, chip);
-        wrap(sb, EVERYONE_HERE, 0, (b, s, e, m) -> span(b, s, e, new ForegroundColorSpan(EVERYONE_FG), new BackgroundColorSpan(EVERYONE_BG), new StyleSpan(Typeface.BOLD)));
-    }
-
-    private String resolveUser(String id, Message msg) {
-        if (guildId != null && activity != null) {
-            String nick = activity.userNickCache.get(guildId + "_" + id);
-            if (!isReal(nick) && msg.author != null && id.equals(msg.author.id) && isReal(msg.memberNick)) nick = msg.memberNick;
-            if (isReal(nick)) return nick;
-            requestMember(id);
-        }
-        String name = msg.mentionedUsers != null ? msg.mentionedUsers.get(id) : null;
-        if (!isReal(name) && activity != null && activity.userNameCache != null) name = activity.userNameCache.get(id);
-        if (isReal(name)) return name;
-        requestUserName(id);
-        return "unknown";
-    }
-
-    private String resolveChannel(String id) {
-        String name = activity != null && activity.channelNameCache != null ? activity.channelNameCache.get(id) : null;
-        if (isReal(name)) return name;
-        requestChannelName(id);
-        return "unknown-channel";
-    }
-
-    private void requestMember(final String id) {
-        if (guildId == null || activity == null || activity.apiClient == null) return;
-        final String key = guildId + "_" + id;
-        if (checkedMembers.contains(key) || !pendingMemberFetches.add(key)) return;
-        final String gid = guildId;
-        activity.apiClient.fetchMember(gid, id, new ApiClient.Callback<org.json.JSONObject>() {
-            @Override public void onSuccess(org.json.JSONObject member) {
-                pendingMemberFetches.remove(key);
-                checkedMembers.add(key);
-                if (activity == null) return;
-                String nick = member.isNull("nick") ? null : member.optString("nick", null);
-                boolean has = isReal(nick);
-                if (has) activity.userNickCache.put(key, nick);
-                if (has) ui.post(() -> { invalidateMentions(id, true); refreshUser(id); });
-            }
-            @Override public void onError(String err) {
-                pendingMemberFetches.remove(key);
-                checkedMembers.add(key);
             }
         });
     }
 
-    private void requestUserName(String id) {
-        if (!claim(id, pendingUserFetches, failedUserFetches)) return;
-        activity.apiClient.fetchUserProfile(id, new ApiClient.Callback<DiscordUser>() {
-            @Override public void onSuccess(DiscordUser u) {
-                String name = u == null ? null : isReal(u.globalName) ? u.globalName : u.username;
-                if (isReal(name) && activity != null && activity.userNameCache != null) activity.userNameCache.put(id, name);
-                settle(id, pendingUserFetches, failedUserFetches, isReal(name), true);
-            }
-            @Override public void onError(String err) { settle(id, pendingUserFetches, failedUserFetches, false, true); }
-        });
-    }
-
-    private void requestChannelName(String id) {
-        if (!claim(id, pendingChannelFetches, failedChannelFetches)) return;
-        activity.apiClient.fetchChannelName(id, new ApiClient.Callback<String>() {
-            @Override public void onSuccess(String name) {
-                if (isReal(name) && activity != null && activity.channelNameCache != null) activity.channelNameCache.put(id, name);
-                settle(id, pendingChannelFetches, failedChannelFetches, isReal(name), false);
-            }
-            @Override public void onError(String err) { settle(id, pendingChannelFetches, failedChannelFetches, false, false); }
-        });
-    }
-
-    private boolean claim(String id, Set<String> pending, Set<String> failed) {
-        return id != null && activity != null && activity.apiClient != null && !failed.contains(id) && pending.add(id);
-    }
-
-    private void settle(String id, Set<String> pending, Set<String> failed, boolean ok, boolean isUser) {
-        pending.remove(id);
-        if (!ok) {
-            failed.add(id);
-            return;
-        }
-        ui.post(() -> invalidateMentions(id, isUser));
-    }
-
-    private void invalidateMentions(String id, boolean isUser) {
+    void invalidateMentions(String id, boolean isUser) {
         ui.post(() -> {
             String prefix = isUser ? "<@" : "<#";
             for (int i = 0; i < displayList.size(); i++) {
@@ -487,11 +220,8 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
                             break;
                         }
                         if (e.fields != null) {
-                            for (EmbedField f : e.fields) {
-                                if (f != null && referencesId(f.value, id, prefix, isUser)) {
-                                    affected = true;
-                                    break;
-                                }
+                            for (a.b.model.EmbedField f : e.fields) {
+                                if (f != null && referencesId(f.value, id, prefix, isUser)) { affected = true; break; }
                             }
                         }
                         if (affected) break;
@@ -510,732 +240,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageAdapter.MessageV
         return text.contains(prefix + id) || (isUser && text.contains("<@!" + id));
     }
 
-    private void loadEmoji(final String id, String url) {
-        if (activity == null || !loadingEmojis.add(id)) return;
-        MediaCache.Spec spec = MediaCache.Spec.plain(url, jumboSize, jumboSize);
-        spec.maxBytes = 4L << 20;
-        MediaCache.get(activity.getApplicationContext()).loadBitmap(spec, new MediaCache.SimpleCallback() {
-            @Override public void onBitmap(Bitmap bmp, int srcW, int srcH) {
-                loadingEmojis.remove(id);
-                if (activity == null) return;
-                emojiCache.put(id, Bitmap.createScaledBitmap(bmp, jumboSize, jumboSize, true));
-                Set<String> affected = emojiMessageMap.remove(id);
-                if (affected == null) return;
-                List<String> ids;
-                synchronized (affected) {
-                    ids = affected.isEmpty() ? Collections.<String>emptyList() : new ArrayList<>(affected);
-                }
-                if (!ids.isEmpty()) invalidateEmoji(ids);
-            }
-            @Override public void onFailure(MediaCache.Failure f) { loadingEmojis.remove(id); }
-            @Override public void onNeedsConfirm(long bytes) { loadingEmojis.remove(id); }
-        });
-    }
-
-    private void invalidateEmoji(List<String> msgIds) {
-        ui.post(() -> {
-            for (String mid : msgIds) {
-                parsedContentCache.remove(mid);
-                for (int i = 0; i < displayList.size(); i++) {
-                    Message m = displayList.get(i);
-                    if (m != null && mid.equals(m.id)) notifyItemChanged(i);
-                }
-            }
-        });
-    }
-
-    private View attachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
-        if (isEncryptedAttachment(a)) {
-            if (activity == null || key() == null) {
-                TextView t = tv("\uD83D\uDD12 " + a.filename + " (encrypted - key missing)", MUTED, 14);
-                t.setPadding(dp(4), dp(4), dp(4), dp(4));
-                return t;
-            }
-            if (isVideoFilename(a.filename)) {
-                return encryptedVideoAttachmentView(a, msg, parent);
-            }
-            return encryptedAttachmentView(a, msg, parent);
-        }
-        boolean image = a.type != null && a.type.startsWith("image");
-        boolean video = a.type != null && a.type.startsWith("video");
-        if (!image && !video) {
-            TextView t = tv("\uD83D\uDCCE " + a.filename, LINK_FG, 14);
-            t.setPadding(dp(4), dp(4), dp(4), dp(4));
-            return t;
-        }
-        int[] sz = mediaSize(parent, msg, a.width, a.height, false);
-        return media(image ? MediaCache.previewUrl(a.url, a.proxyUrl, sz[0], sz[1]) : null, false, a.url, video, sz);
-    }
-    
-    private static boolean isVideoFilename(String name) {
-        if (name == null) return false;
-        String n = name.toLowerCase();
-        return n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".webm") || n.endsWith(".m4v") || n.endsWith(".3gp");
-    }
-    
-    private static String senderOf(Message msg) {
-        return msg != null && msg.author != null ? msg.author.id : null;
-    }
-
-    private static String fmtBytes(long b) {
-        if (b < 1024) return b + " B";
-        if (b < 1024 * 1024) return String.format(Locale.US, "%.0f KB", b / 1024.0);
-        return String.format(Locale.US, "%.1f MB", b / (1024.0 * 1024.0));
-    }
-
-    private View encryptedVideoAttachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
-        return new EncryptedSlot(a, msg, parent, true).begin();
-    }
-
-    private View encryptedAttachmentView(Message.Attachment a, Message msg, ViewGroup parent) {
-        if (!isImageFilename(a.filename)) {
-            TextView t = tv("\uD83D\uDD12 " + a.filename, MUTED, 14);
-            t.setPadding(dp(4), dp(4), dp(4), dp(4));
-            return t;
-        }
-        return new EncryptedSlot(a, msg, parent, false).begin();
-    }
-
-    private final class EncryptedSlot {
-        private static final int LOADING = 0, CONFIRM = 1, FAILED = 2, LOADED = 3, TOO_LARGE = 4;
-
-        final Message.Attachment a;
-        final Message msg;
-        final boolean video;
-        final FrameLayout frame;
-        final ImageView iv;
-        final TextView status, playBtn;
-        final int[] size;
-        private MediaCache.Handle loadHandle = MediaCache.NOOP, openHandle = MediaCache.NOOP;
-        private int state = LOADING;
-        private final String consentKey;
-
-        EncryptedSlot(Message.Attachment a, Message msg, ViewGroup parent, boolean video) {
-            this.a = a;
-            this.msg = msg;
-            this.video = video;
-            String base = a.url == null ? "" : a.url;
-            int q = base.indexOf('?');
-            consentKey = q >= 0 ? base.substring(0, q) : base;
-            int w = a.width, h = a.height;
-            if (msg != null && msg.id != null) {
-                int[] dim = messageDimensionCache.get(msg.id);
-                if (dim != null) { w = dim[0]; h = dim[1]; }
-            }
-            size = mediaSize(parent, msg, w, h, video);
-            frame = new FrameLayout(activity);
-            frame.setLayoutParams(lp(size[0], size[1], 0, dp(4), 0, dp(4)));
-            frame.setBackgroundColor(EMBED_BG);
-
-            iv = new ImageView(activity);
-            iv.setScaleType(video ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
-            frame.addView(iv, new FrameLayout.LayoutParams(MATCH, MATCH));
-
-            status = overlay("", MUTED, 12);
-            status.setGravity(Gravity.CENTER);
-            status.setPadding(dp(12), 0, dp(12), 0);
-            frame.addView(status, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER));
-
-            playBtn = overlay("\u25B6", Color.WHITE, 30);
-            playBtn.setVisibility(View.GONE);
-            frame.addView(playBtn, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
-
-            frame.setOnClickListener(v -> onClick());
-            frame.setTag((MediaCache.Handle) () -> {
-                loadHandle.cancel();
-                openHandle.cancel();
-            });
-        }
-
-        View begin() {
-            start(approvedMedia.contains(consentKey));
-            return frame;
-        }
-
-        private MediaCache.Spec spec(boolean force) {
-            int tw = Math.max(size[0], dp(120)), th = Math.max(size[1], dp(120));
-            MediaCache.Spec s = video
-                ? MediaCache.Spec.encryptedVideo(a.url, key(), channelId, senderOf(msg), a.size, tw)
-                : MediaCache.Spec.encryptedImage(a.url, key(), channelId, senderOf(msg), a.size, tw, th);
-            s.force = force;
-            return s;
-        }
-
-        private void start(boolean force) {
-            if (activity == null) return;
-            loadHandle.cancel();
-            state = LOADING;
-            status.setVisibility(View.VISIBLE);
-            status.setText(force ? "\uD83D\uDD12 Downloading\u2026" : "\uD83D\uDD12 Loading\u2026");
-            MediaCache cache = MediaCache.get(activity.getApplicationContext());
-            MediaCache.Callback cb = new MediaCache.Callback() {
-                @Override public void onProgress(long done, long total) {
-                    if (state != LOADING) return;
-                    status.setText("\uD83D\uDD12 Downloading\u2026 " + (total > 0 ? (int) (done * 100 / total) + "%" : fmtBytes(done)));
-                }
-                @Override public void onNeedsConfirm(long bytes) {
-                    state = CONFIRM;
-                    status.setText("\uD83D\uDD12 " + (video ? "Video" : "Image") + (bytes > 0 ? " \u00B7 " + fmtBytes(bytes) : "") + "\nTap to download");
-                }
-                @Override public void onBitmap(Bitmap bitmap, int w, int h) {
-                    state = LOADED;
-                    iv.setImageBitmap(bitmap);
-                    status.setVisibility(View.GONE);
-                    if (video) playBtn.setVisibility(View.VISIBLE);
-                }
-                @Override public void onFailure(MediaCache.Failure f) { fail(f); }
-            };
-            loadHandle = video ? cache.loadVideoThumb(spec(force), cb) : cache.loadBitmap(spec(force), cb);
-        }
-
-        private void fail(MediaCache.Failure f) {
-            state = FAILED;
-            status.setVisibility(View.VISIBLE);
-            switch (f.kind) {
-                case DECRYPT:
-                    status.setText("\u26A0 Can't decrypt (wrong key?)\nTap to retry");
-                    break;
-                case DECODE:
-                    state = TOO_LARGE;
-                    status.setText("\u26A0 Can't display this " + (video ? "video" : "image"));
-                    break;
-                case TOO_LARGE:
-                    state = TOO_LARGE;
-                    status.setText("\u26A0 Too large (" + fmtBytes(f.bytes) + ")");
-                    break;
-                case HTTP:
-                    status.setText("\u26A0 " + (f.httpCode == 403 || f.httpCode == 404 ? "Expired or deleted" : "Download failed") + "\nTap to retry");
-                    break;
-                default:
-                    status.setText("\u26A0 Download failed\nTap to retry");
-            }
-        }
-
-        private void onClick() {
-            if (state == LOADED) openFull();
-            else if (state == CONFIRM || state == FAILED) {
-                approvedMedia.add(consentKey);
-                start(true);
-            }
-        }
-
-        private void openFull() {
-            if (activity == null) return;
-            status.setVisibility(View.VISIBLE);
-            status.setText("\uD83D\uDD12 Preparing\u2026");
-            openHandle.cancel();
-            openHandle = MediaCache.get(activity.getApplicationContext()).decryptToTemp(spec(true), new MediaCache.TempCallback() {
-                @Override public void onProgress(long done, long total) {}
-                @Override public void onNeedsConfirm(long bytes) {}
-                @Override public void onFile(File plaintext) {
-                    status.setVisibility(View.GONE);
-                    if (video) showEncryptedFullscreenVideo(plaintext);
-                    else showEncryptedFullscreenFile(plaintext, a.filename);
-                }
-                @Override public void onFailure(MediaCache.Failure f) {
-                    status.setText("\u26A0 Couldn't open");
-                }
-            });
-        }
-    }
-
-    private static void deleteWhenClosed(WebView web, final File file) {
-        web.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-            @Override public void onViewAttachedToWindow(View v) {}
-            @Override public void onViewDetachedFromWindow(View v) { MediaCache.deleteTemp(file); }
-        });
-    }
-
-    private void showEncryptedFullscreenVideo(File videoFile) {
-        if (activity == null || videoFile == null || !videoFile.exists()) {
-            MediaCache.deleteTemp(videoFile);
-            return;
-        }
-        hideKeyboard();
-        WebView web = new WebView(activity);
-        deleteWhenClosed(web, videoFile);
-        WebSettings s = web.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setAllowFileAccessFromFileURLs(true);
-        s.setAllowUniversalAccessFromFileURLs(true);
-        s.setMediaPlaybackRequiresUserGesture(false);
-
-        String fileUri = Uri.fromFile(videoFile).toString();
-        String media = "<video controls autoplay playsinline style='width:100%;max-height:100vh'><source src=\"" + fileUri + "\" type=\"video/mp4\"></video>";
-        web.loadDataWithBaseURL("file:///", "<html><body style='margin:0;height:100vh;background:#000;display:flex;" +
-                "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
-        activity.showFullscreen(web);
-    }
-
-    private void showEncryptedFullscreenFile(File file, String filename) {
-        if (activity == null || file == null || !file.exists()) {
-            MediaCache.deleteTemp(file);
-            return;
-        }
-        hideKeyboard();
-
-        WebView web = new WebView(activity);
-        deleteWhenClosed(web, file);
-        WebSettings s = web.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setAllowFileAccess(true);
-        s.setAllowFileAccessFromFileURLs(true);
-        s.setAllowUniversalAccessFromFileURLs(true);
-
-        String fileUri = Uri.fromFile(file).toString();
-        String media = "<img src=\"" + fileUri + "\" style='max-width:100%;max-height:100vh;object-fit:contain'>";
-        web.loadDataWithBaseURL("file:///", "<html><body style='margin:0;height:100vh;background:#000;display:flex;" + "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
-        activity.showFullscreen(web);
-    }
-
-    private View embedView(Embed e, Message msg, ViewGroup parent) {
-        boolean title = isReal(e.title), desc = isReal(e.description);
-        boolean fields = e.fields != null && !e.fields.isEmpty();
-        boolean footer = isReal(e.footer);
-        if (!title && !desc && !fields && !footer) return embedMedia(e, parent);
-        LinearLayout box = linear(VERTICAL);
-        box.setPadding(dp(12), dp(8), dp(12), dp(8));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(EMBED_BG);
-        bg.setCornerRadius(dp(4));
-        box.setBackground(bg);
-        box.setClipToOutline(true);
-        if (title) {
-            TextView t = tv(render(e.title, msg, false), LINK_FG, 14);
-            t.setTypeface(null, Typeface.BOLD);
-            box.addView(t);
-        }
-        if (desc) {
-            TextView d = tv(render(e.description, msg), TEXT, 14);
-            if (title) d.setPadding(0, dp(4), 0, 0);
-            box.addView(d);
-        }
-        if (fields) {
-            for (EmbedField f : e.fields) {
-                if (f == null) continue;
-                TextView name = tv(f.name, 0xFFB9BBBE, 13);
-                name.setTypeface(null, Typeface.BOLD);
-                name.setPadding(0, dp(8), 0, 0);
-                box.addView(name);
-                box.addView(tv(render(f.value, msg), TEXT, 13));
-            }
-        }
-        View media = embedMedia(e, parent);
-        if (media != null) box.addView(media);
-        if (footer) {
-            TextView f = tv(e.footer, MUTED, 12);
-            f.setPadding(0, dp(6), 0, 0);
-            box.addView(f);
-        }
-        View bar = new View(activity);
-        bar.setBackgroundColor(e.color | 0xFF000000);
-        LinearLayout wrapper = linear(HORIZONTAL);
-        wrapper.setPadding(0, dp(4), 0, dp(4));
-        wrapper.addView(bar, lp(dp(4), MATCH, 0, 0, dp(12), 0));
-        wrapper.addView(box, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        return wrapper;
-    }
-
-    private View embedMedia(Embed e, ViewGroup parent) {
-        boolean video = isReal(e.videoUrl);
-        String preview;
-        int w, h;
-        if (video) {
-            boolean own = e.videoWidth > 0 && e.videoHeight > 0;
-            w = own ? e.videoWidth : e.thumbnailWidth;
-            h = own ? e.videoHeight : e.thumbnailHeight;
-            preview = isReal(e.thumbnailUrl) ? e.thumbnailUrl : isReal(e.imageUrl) ? e.imageUrl : null;
-        } else if (isReal(e.imageUrl)) {
-            preview = e.imageUrl;
-            w = e.imageWidth;
-            h = e.imageHeight;
-        } else if (isReal(e.thumbnailUrl)) {
-            preview = e.thumbnailUrl;
-            w = e.thumbnailWidth;
-            h = e.thumbnailHeight;
-        } else {
-            return null;
-        }
-        int[] sz = mediaSize(parent, null, w, h, video);
-        return media(MediaCache.previewUrl(preview, null, sz[0], sz[1]), video, video ? e.videoUrl : preview, video, sz);
-    }
-
-    private static boolean isEncryptedAttachment(Message.Attachment a) {
-        return a != null && a.filename != null && (a.filename.contains(".enc.") || a.filename.endsWith(".enc"));
-    }
-
-    private static boolean isImageFilename(String name) {
-        if (name == null) return false;
-        String n = name.toLowerCase();
-        return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp") || n.endsWith(".bmp");
-    }
-
-    private View media(String preview, boolean crop, String openUrl, boolean video, int[] size) {
-        boolean show = preview != null && imageLoader != null;
-        FrameLayout frame = new FrameLayout(activity);
-        frame.setLayoutParams(lp(size[0], size[1], 0, dp(4), 0, dp(4)));
-        frame.setBackgroundColor(show ? Color.BLACK : EMBED_BG);
-        if (show) {
-            ImageView iv = new ImageView(activity);
-            iv.setScaleType(crop ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
-            imageLoader.load(preview, video ? null : openUrl, iv);
-            frame.addView(iv, new FrameLayout.LayoutParams(MATCH, MATCH));
-        } else if (preview != null) {
-            frame.addView(overlay("\uD83D\uDDBC", 0xAAFFFFFF, 14), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
-        }
-        if (video) {
-            frame.addView(overlay("\u25B6", Color.WHITE, 30), new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
-        }
-        frame.setOnClickListener(v -> showFullscreen(openUrl, video));
-        return frame;
-    }
-
-    private int[] mediaSize(ViewGroup parent, Message msg, int w, int h, boolean fill) {
-        if (msg != null && msg.id != null && (w <= 0 || h <= 0)) {
-            int[] dim = messageDimensionCache.get(msg.id);
-            if (dim != null) { w = dim[0]; h = dim[1]; }
-        }
-        int pw = parent != null ? parent.getWidth() : 0;
-        if (pw <= 0 && activity != null) pw = activity.getResources().getDisplayMetrics().widthPixels;
-        
-        int avail = Math.max(pw > 0 ? pw - dp(112) : dp(248), dp(120));
-        int maxH = dp(400);
-        boolean known = w > 0 && h > 0;
-        String cacheKey = w + "_" + h + "_" + fill + "_" + avail;
-        int[] cached = mediaSizeCache.get(cacheKey);
-        if (cached != null) return cached;
-        
-        int[] result;
-        if (fill) {
-            if (!known) { w = 16; h = 9; }
-            result = new int[]{avail, Math.max(dp(80), Math.min(maxH, (int) ((long) avail * h / w)))};
-        } else if (!known) {
-            result = new int[]{avail, Math.min(avail * 9 / 16, maxH)};
-        } else {
-            float scale = Math.min((float) avail / w, (float) maxH / h);
-            if (scale > 2f) scale = 2f;
-            result = new int[]{Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))};
-        }
-        mediaSizeCache.put(cacheKey, result);
-        return result;
-    }
-
-    private void hideKeyboard() {
-        if (activity == null) return;
-        try {
-            InputMethodManager imm = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm == null) return;
-            View focus = activity.getCurrentFocus();
-            IBinder token = focus != null ? focus.getWindowToken() : null;
-            if (token == null && activity.getWindow() != null && activity.getWindow().getDecorView() != null) {
-                token = activity.getWindow().getDecorView().getWindowToken();
-            }
-            if (token != null) imm.hideSoftInputFromWindow(token, 0);
-            if (focus != null) focus.clearFocus();
-        } catch (Exception ignored) {}
-    }
-
-    private void showFullscreen(String url, boolean video) {
-        if (activity == null || !isHttpsUrl(url)) return;
-        hideKeyboard();
-        WebView web = new WebView(activity);
-        WebSettings settings = web.getSettings();
-        settings.setJavaScriptEnabled(false);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        String src = escapeHtmlAttribute(url);
-        String media = video ? "<video controls autoplay playsinline style='width:100%'><source src=\"" + src + "\" type=\"video/mp4\"></video>"
-                             : "<img src=\"" + src + "\" style='max-width:100%'>";
-        web.loadDataWithBaseURL(null, "<html><body style='margin:0;height:100vh;background:#000;display:flex;" +
-                "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
-        activity.showFullscreen(web);
-    }
-
-    private static boolean isHttpsUrl(String value) {
-        if (!isReal(value)) return false;
-        try {
-            URL url = new URL(value);
-            return "https".equalsIgnoreCase(url.getProtocol()) && url.getHost() != null && !url.getHost().isEmpty();
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private static String escapeHtmlAttribute(String value) {
-        return value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;");
-    }
-
-    private static boolean duplicatesAttachment(Embed e, List<Message.Attachment> atts) {
-        if (atts == null || atts.isEmpty()) return false;
-        Set<String> ids = new HashSet<>();
-        for (Message.Attachment a : atts) {
-            if (a == null) continue;
-            ids.add(attachmentId(a.url));
-            ids.add(attachmentId(a.proxyUrl));
-        }
-        return refs(e.thumbnailUrl, e.thumbnailProxyUrl, ids) || refs(e.imageUrl, e.imageProxyUrl, ids) || refs(e.videoUrl, e.videoProxyUrl, ids);
-    }
-
-    private static boolean refs(String url, String proxyUrl, Set<String> ids) {
-        if (url != null && url.startsWith("attachment://")) return true;
-        String a = attachmentId(url), b = attachmentId(proxyUrl);
-        return (a != null && ids.contains(a)) || (b != null && ids.contains(b));
-    }
-
-    private static String attachmentId(String url) {
-        if (url == null) return null;
-        Matcher m = ATTACHMENT_ID.matcher(url);
-        return m.find() ? m.group(1) : null;
-    }
-
-    private int dp(int v) { return (int) (v * density); }
-    private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
-    private static Set<String> syncSet() { return Collections.synchronizedSet(new HashSet<>()); }
-
-    private static LinearLayout.LayoutParams lp(int w, int h, int l, int t, int r, int b) {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(w, h);
-        p.setMargins(l, t, r, b);
-        return p;
-    }
-
-    private LinearLayout linear(int orientation) {
-        LinearLayout l = new LinearLayout(activity);
-        l.setOrientation(orientation);
-        return l;
-    }
-
-    private TextView overlay(CharSequence text, int color, float sp) {
-        TextView view = new TextView(activity);
-        view.setText(text);
-        view.setTextColor(color);
-        view.setTextSize(sp);
-        return view;
-    }
-
-    private TextView tv(CharSequence text, int color, float sp) {
-        TextView view = new TextView(activity);
-        view.setText(text);
-        view.setTextColor(color);
-        view.setTextSize(sp);
-        view.setLinkTextColor(LINK_FG);
-        view.setMovementMethod(LinkMovementMethod.getInstance());
-        return view;
-    }
-
-    public final class MessageViewHolder extends RecyclerView.ViewHolder implements View.OnLongClickListener {
-        final LinearLayout root, header, body, attachments, embeds;
-        final ImageView avatar;
-        final TextView name, time, reply, content;
-        Message msg;
-
-        MessageViewHolder() {
-            super(new LinearLayout(activity));
-            root = (LinearLayout) itemView;
-            root.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
-            root.setOrientation(HORIZONTAL);
-            root.setBackgroundColor(BG);
-            root.setPadding(dp(12), dp(10), dp(12), 0);
-            root.setOnLongClickListener(this);
-
-            avatar = new ImageView(activity);
-            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            avatar.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
-            avatar.setClipToOutline(true);
-            root.addView(avatar, lp(avatarSize, avatarSize, 0, dp(2), dp(12), 0));
-
-            body = new LinearLayout(activity);
-            body.setOrientation(VERTICAL);
-
-            header = new LinearLayout(activity);
-            header.setOrientation(HORIZONTAL);
-            header.setGravity(Gravity.CENTER_VERTICAL);
-
-            name = new TextView(activity);
-            name.setTextColor(Color.WHITE);
-            name.setTypeface(null, Typeface.BOLD);
-            name.setTextSize(16);
-            name.setSingleLine();
-            name.setEllipsize(TextUtils.TruncateAt.END);
-            name.setMaxWidth((int) (activity.getResources().getDisplayMetrics().widthPixels * 0.6f));
-            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(WRAP, WRAP);
-            nameLp.setMarginEnd(dp(8));
-
-            time = new TextView(activity);
-            time.setTextColor(MUTED);
-            time.setTextSize(12);
-            time.setSingleLine();
-
-            header.addView(name, nameLp);
-            header.addView(time);
-
-            reply = new TextView(activity);
-            reply.setTextColor(MUTED);
-            reply.setTextSize(12);
-            reply.setSingleLine();
-            reply.setEllipsize(TextUtils.TruncateAt.END);
-            reply.setPadding(0, 0, 0, dp(2));
-            reply.setVisibility(View.GONE);
-
-            content = new TextView(activity);
-            content.setTextColor(TEXT);
-            content.setTextSize(16);
-            content.setLinkTextColor(LINK_FG);
-            content.setMovementMethod(LinkMovementMethod.getInstance());
-            content.setLineSpacing(0, 1.12f);
-            content.setOnLongClickListener(this);
-
-            attachments = new LinearLayout(activity);
-            attachments.setOrientation(VERTICAL);
-            embeds = new LinearLayout(activity);
-            embeds.setOrientation(VERTICAL);
-
-            body.addView(header);
-            body.addView(reply);
-            body.addView(content);
-            body.addView(attachments);
-            body.addView(embeds);
-            root.addView(body, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        }
-
-        void bind(Message msg, int pos) {
-            boolean showHeader = pos == 0 || !sameGroup(displayList.get(pos - 1), msg);
-            bindHeader(this, msg, showHeader);
-            root.setBackgroundColor(mentionsSelf(msg) ? 0xFF3A3A33 : BG);
-            CharSequence text;
-
-            if (msg.encrypted && (activity == null || key() == null)) {
-                text = "\uD83D\uDD12 Encrypted message (key missing)";
-            } else {
-                if (msg.id == null) {
-                    text = render(msg.content, msg);
-                } else {
-                    text = parsedContentCache.get(msg.id);
-                    if (text == null) {
-                        text = render(msg.content, msg);
-                        parsedContentCache.put(msg.id, text);
-                    }
-                }
-            }
-            content.setText(text);
-            content.setVisibility(text.length() > 0 ? View.VISIBLE : View.GONE);
-            
-            boolean isReply = msg.replyToMessageId != null;
-            reply.setVisibility(isReply ? View.VISIBLE : View.GONE);
-            if (isReply) reply.setText(replyPreview(msg));
-
-            List<View> oldMedia = new ArrayList<>();
-            for (int i = 0; i < attachments.getChildCount(); i++) oldMedia.add(attachments.getChildAt(i));
-            for (int i = 0; i < embeds.getChildCount(); i++) oldMedia.add(embeds.getChildAt(i));
-            attachments.removeAllViews();
-            if (msg.attachments != null) {
-                for (Message.Attachment a : msg.attachments) {
-                    if (a != null) add(attachments, attachmentView(a, msg, root));
-                }
-            }
-
-            embeds.removeAllViews();
-            if (msg.embeds != null) {
-                for (Embed e : msg.embeds) {
-                    if (e != null && !duplicatesAttachment(e, msg.attachments)) add(embeds, embedView(e, msg, root));
-                }
-            }
-            for (View old : oldMedia) ImageLoader.cancelTree(old);
-        }
-
-        private void add(LinearLayout box, View child) {
-            if (child == null) return;
-            child.setOnLongClickListener(this);
-            box.addView(child);
-        }
-
-        @Override public boolean onLongClick(View v) {
-            if (longPressListener == null || msg == null) return false;
-            longPressListener.onMessageLongPress(msg, v);
-            return true;
-        }
-    }
-
-    private static final class Click extends ClickableSpan {
-        private final Runnable action;
-        Click(Runnable action) { this.action = action; }
-        @Override public void onClick(View v) { action.run(); }
-        @Override public void updateDrawState(TextPaint ds) { ds.setUnderlineText(false); }
-    }
-
-    private static Long timestampMillis(String seconds) {
-        try { return Math.multiplyExact(Long.parseLong(seconds), 1000L); }
-        catch (NumberFormatException | ArithmeticException ex) { return null; }
-    }
-
-    private void timestamps(SpannableStringBuilder sb) {
-        sub(sb, TIMESTAMP, match -> {
-            Long millis = timestampMillis(match.group(1));
-            return millis == null ? match.group() : formatTimestamp(millis, match.group(2));
-        }, (b, s, e, match) -> {
-            Long millis = timestampMillis(match.group(1));
-            if (millis == null) return;
-            span(b, s, e, new ForegroundColorSpan(LINK_FG), new Click(() -> {
-                if (activity != null) {
-                    activity.toast(DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.LONG).format(new Date(millis)));
-                }
-            }));
-        });
-    }
-
-    private static String formatTimestamp(long millis, String style) {
-        if ("R".equals(style)) {
-            return DateUtils.getRelativeTimeSpanString(millis, System.currentTimeMillis(), DateUtils.SECOND_IN_MILLIS).toString();
-        }
-        int index = style == null ? -1 : STYLES.indexOf(style);
-        return new SimpleDateFormat(DATE_PATTERNS[index < 0 ? 4 : index], Locale.US).format(new Date(millis));
-    }
-
-    private static void span(Spannable sb, int start, int end, Object... spans) {
-        for (Object o : spans) sb.setSpan(o, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-    }
-
-    private static List<MatchResult> matches(SpannableStringBuilder sb, Pattern p) {
-        LinkedList<MatchResult> out = new LinkedList<>();
-        Matcher m = p.matcher(sb.toString());
-        while (m.find()) {
-            if (!isCode(sb, m.start(), m.end())) out.addFirst(m.toMatchResult());
-        }
-        return out;
-    }
-
-    private static boolean isCode(Spanned sb, int start, int end) {
-        for (TypefaceSpan t : sb.getSpans(start, end, TypefaceSpan.class)) {
-            if ("monospace".equals(t.getFamily())) return true;
-        }
-        return false;
-    }
-
-    private static void wrap(SpannableStringBuilder sb, Pattern p, int g, Styler styler) {
-        for (MatchResult m : matches(sb, p)) {
-            int len = m.end(g) - m.start(g);
-            sb.delete(m.end(g), m.end());
-            sb.delete(m.start(), m.start(g));
-            styler.apply(sb, m.start(), m.start() + len, m);
-        }
-    }
-
-    private static void sub(SpannableStringBuilder sb, Pattern p, Text text, Styler styler) {
-        for (MatchResult m : matches(sb, p)) {
-            CharSequence r = text.of(m);
-            int start = m.start(), end = m.end();
-            Object[] spans = sb.getSpans(start, end, Object.class);
-            int[] flags = new int[spans.length];
-            for (int i = 0; i < spans.length; i++) {
-                boolean inside = sb.getSpanStart(spans[i]) >= start && sb.getSpanEnd(spans[i]) <= end;
-                flags[i] = inside ? sb.getSpanFlags(spans[i]) : -1;
-            }
-            sb.replace(start, end, r);
-            for (int i = 0; i < spans.length; i++) {
-                if (flags[i] >= 0) sb.setSpan(spans[i], start, start + r.length(), flags[i]);
-            }
-            styler.apply(sb, start, start + r.length(), m);
-        }
+    static boolean sameGroup(Message prev, Message cur) {
+        if (prev.author == null || cur.author == null || cur.replyToMessageId != null) return false;
+        long difference = cur.timestamp - prev.timestamp;
+        return Objects.equals(prev.author.id, cur.author.id) && difference >= 0 && difference <= GROUP_GAP_MS;
     }
 }

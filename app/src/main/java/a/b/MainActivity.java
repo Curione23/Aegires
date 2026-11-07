@@ -336,7 +336,7 @@ public class MainActivity extends Activity {
             if (s.adapter != null) {
                 sb.append(" msgs=").append(s.messages.size())
                   .append(" parsed=").append(s.adapter.parsedContentCache.size())
-                  .append(" emoji=").append(s.adapter.emojiCache.size());
+                  .append(" emoji=").append(s.adapter.emojiCacheSize());
             }
         }
         if (gateway != null) sb.append(" gw=").append(gatewayConnected ? "up" : "down");

@@ -74,7 +74,7 @@ final class MessageCryptoHelper {
             try {
                 int w = Integer.parseInt(matcher.group(1));
                 int h = Integer.parseInt(matcher.group(2));
-                if (m.id != null) MessageAdapter.messageDimensionCache.put(m.id, new int[]{w, h});
+                if (m.id != null) MessageMediaViewFactory.messageDimensionCache.put(m.id, new int[]{w, h});
                 m.content = m.content.substring(matcher.end());
             } catch (Exception ignored) {}
         }
