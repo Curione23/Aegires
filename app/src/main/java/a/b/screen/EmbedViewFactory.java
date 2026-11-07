@@ -20,6 +20,8 @@ import a.b.util.Ui;
 /** Builds Discord-style embed cards. */
 final class EmbedViewFactory {
     private static final Pattern ATTACHMENT_ID = Pattern.compile("/attachments/[^/]+/([^/]+)/");
+    private static final String ATTACHMENT_SCHEME = "attachment://";
+    private static final int DEFAULT_BAR_COLOR = 0xFF4F545C;
 
     private final MessageAdapter adapter;
 
@@ -28,6 +30,7 @@ final class EmbedViewFactory {
     }
 
     View build(Embed e, Message msg, ViewGroup parent) {
+        if (e == null || adapter.activity == null) return null;
         boolean title = isReal(e.title), desc = isReal(e.description);
         boolean fields = e.fields != null && !e.fields.isEmpty();
         boolean footer = isReal(e.footer);
@@ -67,10 +70,10 @@ final class EmbedViewFactory {
             box.addView(f);
         }
         View bar = new View(adapter.activity);
-        bar.setBackgroundColor(e.color | 0xFF000000);
+        bar.setBackgroundColor(e.color == 0 ? DEFAULT_BAR_COLOR : e.color | 0xFF000000);
         LinearLayout wrapper = linear(LinearLayout.HORIZONTAL);
         wrapper.setPadding(0, adapter.dp(4), 0, adapter.dp(4));
-        wrapper.addView(bar, lp(adapter.dp(4), -1, 0, 0, adapter.dp(12), 0));
+        wrapper.addView(bar, lp(adapter.dp(4), -1, 0, 0, 0, 0));
         wrapper.addView(box, new LinearLayout.LayoutParams(0, -2, 1f));
         return wrapper;
     }
@@ -103,18 +106,25 @@ final class EmbedViewFactory {
     static boolean duplicatesAttachment(Embed e, List<Message.Attachment> atts) {
         if (atts == null || atts.isEmpty()) return false;
         Set<String> ids = new HashSet<>();
+        Set<String> filenames = new HashSet<>();
         for (Message.Attachment a : atts) {
             if (a == null) continue;
             ids.add(attachmentId(a.url));
             ids.add(attachmentId(a.proxyUrl));
+            if (a.filename != null) filenames.add(a.filename);
         }
-        return refs(e.thumbnailUrl, e.thumbnailProxyUrl, ids)
-            || refs(e.imageUrl, e.imageProxyUrl, ids)
-            || refs(e.videoUrl, e.videoProxyUrl, ids);
+        return refs(e.thumbnailUrl, e.thumbnailProxyUrl, ids, filenames)
+            || refs(e.imageUrl, e.imageProxyUrl, ids, filenames)
+            || refs(e.videoUrl, e.videoProxyUrl, ids, filenames);
     }
 
-    private static boolean refs(String url, String proxyUrl, Set<String> ids) {
-        if (url != null && url.startsWith("attachment://")) return true;
+    private static boolean refs(String url, String proxyUrl, Set<String> ids, Set<String> filenames) {
+        if (url != null && url.startsWith(ATTACHMENT_SCHEME)) {
+            String target = url.substring(ATTACHMENT_SCHEME.length());
+            int q = target.indexOf('?');
+            if (q >= 0) target = target.substring(0, q);
+            return filenames.contains(target);
+        }
         String a = attachmentId(url), b = attachmentId(proxyUrl);
         return (a != null && ids.contains(a)) || (b != null && ids.contains(b));
     }

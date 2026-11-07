@@ -1,5 +1,6 @@
 package a.b.screen;
 
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.view.View;
 import android.widget.EditText;
@@ -18,20 +19,30 @@ import a.b.util.Ui;
 final class GuildSessionMenu {
     private final MainActivity activity;
     private final float density;
+    private AlertDialog current;
 
     GuildSessionMenu(MainActivity activity, float density) {
         this.activity = activity;
         this.density = density;
     }
 
+    void dismiss() {
+        AlertDialog d = current;
+        current = null;
+        if (d != null) {
+            try { d.dismiss(); } catch (Exception ignored) {}
+        }
+    }
+
     void showSessionMenu() {
         if (activity == null) return;
         final boolean hasKey = activity.e2eeKey != null;
-        final String presetItem = "Encryption preset: " + activity.e2eePreset.label;
+        final String presetItem = "Encryption preset: "
+            + (activity.e2eePreset != null ? activity.e2eePreset.label : "AES-128-GCM");
         String[] items = hasKey
             ? new String[]{"Set encryption key", "Clear encryption key", presetItem, "Log out"}
             : new String[]{"Set encryption key", presetItem, "Log out"};
-        new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Session")
             .setItems(items, (d, which) -> {
                 String picked = items[which];
@@ -57,7 +68,7 @@ final class GuildSessionMenu {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), 0);
 
-        TextView info = Ui.text(host, "Applies to the messages and files you send. You can read everyone else's whatever they chose. "
+        TextView info = Ui.text(host, "Applies to the messages and files you send. You can read everyone else's messages regardless of profile. "
             + "Preset channels always use AES-128-GCM.", Ui.MUTED, 13);
         info.setPadding(0, 0, 0, dp(10));
         box.addView(info);
@@ -76,7 +87,7 @@ final class GuildSessionMenu {
         }
         box.addView(group);
 
-        new android.app.AlertDialog.Builder(host, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        current = new AlertDialog.Builder(host, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Encryption preset")
             .setView(box)
             .setPositiveButton("Save", (d, w) -> {
@@ -92,7 +103,7 @@ final class GuildSessionMenu {
 
     private void confirmLogout() {
         if (activity == null) return;
-        new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Log out")
             .setMessage("Clear the saved token and return to the login screen?")
             .setPositiveButton("Log out", (dialog, which) -> {
@@ -116,12 +127,13 @@ final class GuildSessionMenu {
         box.setPadding(dp(20), dp(8), dp(20), 0);
         box.addView(input);
 
-        new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle("Set encryption key")
             .setMessage("Everyone in the chat must use the same password. Use a long passphrase: the password is the only secret protecting your messages.")
             .setView(box)
             .setPositiveButton("Set", (d, which) -> {
                 String pass = input.getText().toString();
+                input.setText("");
                 if (pass.length() < 8) { if (activity != null) activity.toast("Use at least 8 characters"); return; }
                 if (pass.length() > 256) { if (activity != null) activity.toast("Password too long (max 256)"); return; }
                 deriveAndSetKey(pass);
@@ -133,11 +145,19 @@ final class GuildSessionMenu {
     private void deriveAndSetKey(final String password) {
         if (activity == null) return;
         final MainActivity host = activity;
+        final boolean hadKey = host.e2eeKey != null;
+        final int gen = host.derivationGen.incrementAndGet();
         host.toast("Deriving key, this takes a few seconds\u2026");
         new Thread(() -> {
             final SecretKey key = Crypto.deriveKey(password);
             host.runOnUiThread(() -> {
-                if (key == null) { host.toast("Key derivation failed (not enough memory?)"); return; }
+                if (gen != host.derivationGen.get()) return; // superseded
+                if (key == null) {
+                    host.toast(hadKey
+                        ? "Key derivation failed; previous key still active"
+                        : "Key derivation failed (not enough memory?)");
+                    return;
+                }
                 host.e2eeKey = key;
                 host.e2eeEnabled = true;
                 MediaCache.get(host).clearFailures();
@@ -148,6 +168,7 @@ final class GuildSessionMenu {
 
     private void clearKey() {
         if (activity == null) return;
+        activity.derivationGen.incrementAndGet();
         activity.e2eeKey = null;
         activity.e2eeEnabled = false;
         MediaCache.get(activity).clearSensitive();

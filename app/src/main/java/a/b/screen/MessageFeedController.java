@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import a.b.api.ApiClient;
 import a.b.model.Message;
 
@@ -18,6 +19,7 @@ import a.b.model.Message;
 final class MessageFeedController {
     private static final int PAGE_SIZE = 30;
     private static final int MAX_MESSAGES = 1000;
+    private static final long MEMBER_RETRY_COOLDOWN_MS = 15_000;
 
     private static final Comparator<Message> BY_ID = (a, b) ->
         a.id.length() != b.id.length() ? a.id.length() - b.id.length() : a.id.compareTo(b.id);
@@ -32,6 +34,7 @@ final class MessageFeedController {
     private boolean loadingNew, loadingOld, allLoaded;
     private final Set<String> pendingNickFetches = new HashSet<>();
     private final Set<String> memberChecked = new HashSet<>();
+    private final ConcurrentHashMap<String, Long> memberFailedUntil = new ConcurrentHashMap<>();
 
     MessageFeedController(MessageListScreen host, MessageAdapter adapter,
                           RecyclerView messageList, LinearLayoutManager layoutManager,
@@ -82,7 +85,7 @@ final class MessageFeedController {
         host.activity.apiClient.fetchMessages(host.channelId, messages.get(0).id, null, PAGE_SIZE, new ApiClient.Callback<List<Message>>() {
             @Override public void onSuccess(List<Message> batch) {
                 if (host.activity == null) { loadingOld = false; return; }
-                if (batch.isEmpty()) {
+                if (batch == null || batch.isEmpty()) {
                     loadingOld = false;
                     allLoaded = true;
                     updateLoadMoreButton();
@@ -100,6 +103,8 @@ final class MessageFeedController {
     }
 
     void prepend(List<Message> batch) {
+        if (batch == null || batch.isEmpty()) { loadingOld = false; updateLoadMoreButton(); return; }
+        if (host.loadingAdapter == null || layoutManager == null) { loadingOld = false; return; }
         final int spinnerCount = host.loadingAdapter.getItemCount();
         String tempAnchorId = null;
         int tempOffset = 0;
@@ -125,7 +130,7 @@ final class MessageFeedController {
         final ArrayList<Message> newList = new ArrayList<>(messages);
         messageList.post(() -> {
             adapter.submitList(newList);
-            if (anchorId == null) return;
+            if (anchorId == null || host.loadingAdapter == null) return;
             final int newMsgIdx = indexOf(anchorId);
             if (newMsgIdx < 0) return;
             int spinnerAfter = host.loadingAdapter.getItemCount();
@@ -137,8 +142,10 @@ final class MessageFeedController {
     }
 
     boolean merge(List<Message> incoming, boolean older) {
+        if (incoming == null || incoming.isEmpty()) return false;
         boolean changed = false;
         for (Message m : incoming) {
+            if (m == null) continue;
             MessageCryptoHelper.decryptMessageInPlace(host, m);
             if (m.author != null && m.author.id != null && isReal(m.memberNick) && host.guildId != null && host.activity != null && host.activity.userNickCache != null) {
                 host.activity.userNickCache.put(host.guildId + "_" + m.author.id, m.memberNick);
@@ -152,8 +159,10 @@ final class MessageFeedController {
         Collections.sort(messages, BY_ID);
         while (messages.size() > MAX_MESSAGES) {
             Message gone = messages.remove(older ? messages.size() - 1 : 0);
-            messageIds.remove(gone.id);
-            if (adapter != null) adapter.parsedContentCache.remove(gone.id);
+            if (gone.id != null) {
+                messageIds.remove(gone.id);
+                if (adapter != null) adapter.parsedContentCache.remove(gone.id);
+            }
         }
         return true;
     }
@@ -181,12 +190,11 @@ final class MessageFeedController {
             boolean hasRole = host.activity.userRoleCache.containsKey(userId);
             boolean hasNick = host.activity.userNickCache != null && host.activity.userNickCache.containsKey(cacheKey);
             if (hasRole && hasNick) continue;
-            if (memberChecked.contains(userId) || !pendingNickFetches.add(userId)) continue;
+            if (memberChecked.contains(userId) || !canRetryMember(userId) || !pendingNickFetches.add(userId)) continue;
 
             host.activity.apiClient.fetchMember(host.guildId, userId, new ApiClient.Callback<JSONObject>() {
                 @Override public void onSuccess(JSONObject member) {
                     pendingNickFetches.remove(userId);
-                    memberChecked.add(userId);
                     if (host.activity == null) return;
                     boolean updated = false;
                     JSONArray rolesArr = member.optJSONArray("roles");
@@ -202,18 +210,27 @@ final class MessageFeedController {
                         else host.activity.userNickCache.remove(cacheKey);
                         updated = true;
                     }
+                    memberChecked.add(userId);
+                    memberFailedUntil.remove(userId);
                     if (updated) adapter.refreshUser(userId);
                 }
                 @Override public void onError(String err) {
                     pendingNickFetches.remove(userId);
-                    memberChecked.add(userId);
+                    memberFailedUntil.put(userId, System.currentTimeMillis() + MEMBER_RETRY_COOLDOWN_MS);
                 }
             });
         }
     }
 
+    private boolean canRetryMember(String userId) {
+        Long until = memberFailedUntil.get(userId);
+        if (until == null) return true;
+        if (System.currentTimeMillis() >= until) { memberFailedUntil.remove(userId); return true; }
+        return false;
+    }
+
     void updateLoadMoreButton() {
-        if (host.activity == null) return;
+        if (host.activity == null || host.loadingAdapter == null) return;
         host.loadingAdapter.setVisible(loadingOld);
     }
 

@@ -1,5 +1,6 @@
 package a.b.screen;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
@@ -32,22 +33,28 @@ final class GuildListAdapter extends RecyclerView.Adapter<GuildListAdapter.Guild
         this.density = density;
     }
 
-    /** Called from the screen's onDestroy to drop the activity reference. */
     void release() {
         activity = null;
     }
 
     @Override public int getItemCount() { return guilds.size(); }
-    @Override public GuildViewHolder onCreateViewHolder(ViewGroup parent, int viewType) { return new GuildViewHolder(); }
-    @Override public void onBindViewHolder(GuildViewHolder holder, int pos) { holder.bind(guilds.get(pos)); }
+
+    @Override public GuildViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        return new GuildViewHolder(parent.getContext());
+    }
+
+    @Override public void onBindViewHolder(GuildViewHolder holder, int pos) {
+        Guild g = (pos >= 0 && pos < guilds.size()) ? guilds.get(pos) : null;
+        holder.bind(g);
+    }
 
     final class GuildViewHolder extends RecyclerView.ViewHolder {
         final FrameLayout iconWrap;
         final ImageView icon;
         final TextView initial, name;
 
-        GuildViewHolder() {
-            super(new LinearLayout(activity));
+        GuildViewHolder(Context context) {
+            super(new LinearLayout(context));
             LinearLayout row = (LinearLayout) itemView;
             row.setLayoutParams(new RecyclerView.LayoutParams(-1, dp(ROW_HEIGHT_DP)));
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -56,34 +63,39 @@ final class GuildListAdapter extends RecyclerView.Adapter<GuildListAdapter.Guild
             row.setClickable(true);
             row.setBackground(Ui.ripple(null, 0));
 
-            iconWrap = new FrameLayout(activity);
+            iconWrap = new FrameLayout(context);
             iconWrap.setClipToOutline(true);
+            iconWrap.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(ICON_SIZE_DP), dp(ICON_SIZE_DP));
             iconLp.setMarginEnd(dp(14));
-            icon = new ImageView(activity);
+            icon = new ImageView(context);
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            initial = Ui.text(activity, "", Color.WHITE, 16);
+            initial = Ui.text(context, "", Color.WHITE, 16);
             initial.setTypeface(null, Typeface.BOLD);
             initial.setGravity(Gravity.CENTER);
             iconWrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
             iconWrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
             row.addView(iconWrap, iconLp);
 
-            name = Ui.text(activity, "", Ui.TEXT_HEADER, 16);
+            name = Ui.text(context, "", Ui.TEXT_HEADER, 16);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
         }
 
         void bind(final Guild g) {
+            if (g == null) return;
             name.setText(g.name);
-            boolean hasIcon = Ui.isReal(g.icon);
+            boolean hasIcon = Ui.isReal(g.id) && Ui.isReal(g.icon);
             iconWrap.setBackground(Ui.rounded(hasIcon ? Ui.BG_TERTIARY : Ui.avatarColor(g.id), dp(16)));
-            iconWrap.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
             initial.setText(initialOf(g.name));
             initial.setVisibility(hasIcon ? View.GONE : View.VISIBLE);
-            activity.imageLoader.load(hasIcon
-                ? "https://cdn.discordapp.com/icons/" + g.id + "/" + g.icon + ".png?size=128" : null, icon);
+            if (activity != null && activity.imageLoader != null) {
+                activity.imageLoader.load(hasIcon
+                    ? "https://cdn.discordapp.com/icons/" + g.id + "/" + g.icon + ".png?size=128" : null, icon);
+            } else {
+                icon.setImageDrawable(null);
+            }
             itemView.setOnClickListener(v -> {
                 if (activity != null) activity.navigate(new ChannelListScreen(g, g.owner));
             });
@@ -91,8 +103,10 @@ final class GuildListAdapter extends RecyclerView.Adapter<GuildListAdapter.Guild
     }
 
     private static String initialOf(String name) {
-        if (name == null || name.trim().isEmpty()) return "?";
-        return name.trim().substring(0, name.trim().offsetByCodePoints(0, 1)).toUpperCase(Locale.US);
+        if (name == null) return "?";
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) return "?";
+        return trimmed.substring(0, trimmed.offsetByCodePoints(0, 1)).toUpperCase(Locale.US);
     }
 
     private int dp(int v) { return (int) (v * density); }

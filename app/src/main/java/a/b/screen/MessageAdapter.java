@@ -47,8 +47,6 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
                 return size() > CACHE_MAX;
             }
         });
-    public final ExecutorService emojiExecutor = Executors.newFixedThreadPool(4);
-
     MainActivity activity;
     List<Message> messages;
     List<Message> displayList;
@@ -98,8 +96,9 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
         super.onViewRecycled(holder);
     }
 
-    @Override public MessageViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-        return new MessageViewHolder(this);
+    @Override
+    public MessageViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+        return new MessageViewHolder(this, parent.getContext());
     }
 
     @Override public void onBindViewHolder(MessageViewHolder h, int pos) {
@@ -116,20 +115,22 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     public void submitList(List<Message> newList) {
         final List<Message> oldList = displayList;
         final List<Message> snapshot = newList == null ? new ArrayList<>() : new ArrayList<>(newList);
-        parsedContentCache.clear();
         DiffUtil.DiffResult result = DiffUtil.calculateDiff(new DiffUtil.Callback() {
             @Override public int getOldListSize() { return oldList.size(); }
             @Override public int getNewListSize() { return snapshot.size(); }
             @Override public boolean areItemsTheSame(int oldPosition, int newPosition) {
                 Message oldMessage = oldList.get(oldPosition);
                 Message newMessage = snapshot.get(newPosition);
-                return oldMessage.id != null && oldMessage.id.equals(newMessage.id);
+                return oldMessage != null && newMessage != null
+                    && oldMessage.id != null && oldMessage.id.equals(newMessage.id);
             }
-            @Override public boolean areContentsTheSame(int oldPosition, int newPosition) { return false; }
+            @Override public boolean areContentsTheSame(int oldPosition, int newPosition) {
+                return oldList.get(oldPosition) == snapshot.get(newPosition);
+            }
         });
         displayList = snapshot;
         messages = new ArrayList<>(snapshot);
-        ui.post(() -> result.dispatchUpdatesTo(MessageAdapter.this));
+        result.dispatchUpdatesTo(this);
     }
 
     public void invalidateMessage(String id) {
@@ -241,7 +242,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     }
 
     static boolean sameGroup(Message prev, Message cur) {
-        if (prev.author == null || cur.author == null || cur.replyToMessageId != null) return false;
+        if (prev == null || cur == null || prev.author == null || cur.author == null || cur.replyToMessageId != null) return false;
         long difference = cur.timestamp - prev.timestamp;
         return Objects.equals(prev.author.id, cur.author.id) && difference >= 0 && difference <= GROUP_GAP_MS;
     }

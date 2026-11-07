@@ -18,6 +18,8 @@ import a.b.util.MentionStore;
 import a.b.util.Ui;
 
 public class GuildListScreen implements Screen, MentionStore.Listener {
+    private static final long REVALIDATE_COOLDOWN_MS = 60_000;
+
     MainActivity activity;
     View view;
     RecyclerView recyclerView;
@@ -27,6 +29,8 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
     float density;
     boolean destroyed;
     private boolean loading;
+    private boolean fetching;
+    private long lastFetchAt = 0;
     private final List<Guild> guilds = new ArrayList<>();
     private GuildSessionMenu sessionMenu;
 
@@ -66,6 +70,8 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
     }
 
     private void loadGuilds() {
+        if (activity == null) return;
+        if (loading || fetching) return;
         List<Guild> cached = activity.guildCache.get("me");
         if (cached != null) {
             guilds.clear();
@@ -74,10 +80,10 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
             updateEmpty(null);
             return;
         }
-        if (loading) return;
         loading = true;
         activity.diskCache.loadGuilds(disk -> {
-            if (destroyed || activity == null) return;
+            if (destroyed || activity == null) { loading = false; return; }
+            loading = false;
             boolean stale = disk != null && !disk.isEmpty() && guilds.isEmpty();
             if (stale) {
                 guilds.clear();
@@ -90,10 +96,14 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
     }
 
     private void fetchGuilds(final boolean haveStale) {
+        if (fetching || activity == null) return;
+        fetching = true;
+        lastFetchAt = System.currentTimeMillis();
         final MainActivity host = activity;
         host.apiClient.fetchGuilds(new ApiClient.Callback<List<Guild>>() {
             @Override public void onSuccess(List<Guild> result) {
-                loading = false;
+                fetching = false;
+                lastFetchAt = System.currentTimeMillis();
                 host.guildCache.put("me", result);
                 host.diskCache.saveGuilds(result);
                 if (destroyed) return;
@@ -103,7 +113,8 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
                 updateEmpty(null);
             }
             @Override public void onError(String msg) {
-                loading = false;
+                fetching = false;
+                lastFetchAt = System.currentTimeMillis();
                 if (destroyed) return;
                 if (!haveStale) updateEmpty("Couldn't load servers.\nTap to retry.");
             }
@@ -123,8 +134,10 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
         } else if (guilds.isEmpty()) {
             emptyView.setText("You are not in any servers yet.");
             emptyView.setVisibility(View.VISIBLE);
+            emptyView.setOnClickListener(null);
         } else {
             emptyView.setVisibility(View.GONE);
+            emptyView.setOnClickListener(null);
         }
     }
 
@@ -141,22 +154,32 @@ public class GuildListScreen implements Screen, MentionStore.Listener {
     @Override public View getView() { return view; }
     @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
 
-    @Override public void onResume() {
+    @Override
+    public void onResume() {
         if (activity == null) return;
         activity.mentions.addListener(this);
         updateBadges();
-        if (activity.guildCache.get("me") == null || guilds.size() != activity.guildCache.get("me").size()) loadGuilds();
+        List<Guild> cached = activity.guildCache.get("me");
+        if (cached == null) {
+            loadGuilds();
+        } else if (!loading && !fetching && System.currentTimeMillis() - lastFetchAt > REVALIDATE_COOLDOWN_MS) {
+            fetchGuilds(true);
+        }
     }
 
-    @Override public void onPause() {
+    @Override
+    public void onPause() {
         if (activity != null) activity.mentions.removeListener(this);
     }
 
-    @Override public void onDestroy() {
+    @Override
+    public void onDestroy() {
         destroyed = true;
         if (activity != null) activity.mentions.removeListener(this);
         if (adapter != null) adapter.release();
+        if (sessionMenu != null) sessionMenu.dismiss();
         activity = null;
+        view = null;
         adapter = null;
         sessionMenu = null;
     }

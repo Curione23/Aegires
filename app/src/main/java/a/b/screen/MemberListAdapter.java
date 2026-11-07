@@ -1,5 +1,6 @@
 package a.b.screen;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
@@ -29,7 +30,6 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         this.guildId = guildId;
     }
 
-    /** Called from the screen's onDestroy to drop the activity reference. */
     void release() {
         activity = null;
     }
@@ -46,9 +46,10 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     }
 
     @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
-        if (type == TYPE_GROUP) return new GroupHolder();
-        if (type == TYPE_MEMBER) return new MemberHolder();
-        return new PlaceholderHolder();
+        Context c = parent.getContext();
+        if (type == TYPE_GROUP) return new GroupHolder(c);
+        if (type == TYPE_MEMBER) return new MemberHolder(c);
+        return new PlaceholderHolder(c);
     }
 
     @Override public void onBindViewHolder(RecyclerView.ViewHolder h, int pos) {
@@ -62,12 +63,10 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         return activity.memberList.get(pos);
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
-
     final class GroupHolder extends RecyclerView.ViewHolder {
         final TextView title;
-        GroupHolder() {
-            super(new TextView(activity));
+        GroupHolder(Context c) {
+            super(new TextView(c));
             title = (TextView) itemView;
             title.setTextColor(Ui.MUTED);
             title.setTextSize(12);
@@ -75,10 +74,13 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             title.setLetterSpacing(0.04f);
             title.setSingleLine(true);
             title.setEllipsize(TextUtils.TruncateAt.END);
-            title.setPadding(dp(16), dp(18), dp(16), dp(6));
+            title.setPadding(Ui.dp(c, 16), Ui.dp(c, 18), Ui.dp(c, 16), Ui.dp(c, 6));
             title.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
         }
-        void bind(Entry e) { title.setText(MemberPresentation.groupTitle(activity, e)); }
+        void bind(Entry e) {
+            if (activity == null) return;
+            title.setText(MemberPresentation.groupTitle(activity, e));
+        }
     }
 
     final class MemberHolder extends RecyclerView.ViewHolder {
@@ -87,54 +89,55 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         final TextView initial, name, botTag;
         final View dot;
 
-        MemberHolder() {
-            super(new LinearLayout(activity));
+        MemberHolder(Context c) {
+            super(new LinearLayout(c));
             LinearLayout row = (LinearLayout) itemView;
-            row.setLayoutParams(new RecyclerView.LayoutParams(-1, dp(52)));
+            row.setLayoutParams(new RecyclerView.LayoutParams(-1, Ui.dp(c, 52)));
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(16), 0, dp(16), 0);
+            row.setPadding(Ui.dp(c, 16), 0, Ui.dp(c, 16), 0);
             row.setClickable(true);
             row.setBackground(Ui.ripple(null, 0));
 
-            FrameLayout holder = new FrameLayout(activity);
-            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(dp(40), dp(40));
-            hlp.setMarginEnd(dp(12));
+            FrameLayout holder = new FrameLayout(c);
+            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
+            hlp.setMarginEnd(Ui.dp(c, 12));
 
-            avatarWrap = new FrameLayout(activity);
+            avatarWrap = new FrameLayout(c);
             avatarWrap.setClipToOutline(true);
-            initial = Ui.text(activity, "", Color.WHITE, 16);
+            initial = Ui.text(c, "", Color.WHITE, 16);
             initial.setTypeface(null, Typeface.BOLD);
             initial.setGravity(Gravity.CENTER);
             avatarWrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
-            avatar = new ImageView(activity);
+            avatar = new ImageView(c);
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
             avatarWrap.addView(avatar, new FrameLayout.LayoutParams(-1, -1));
             holder.addView(avatarWrap, new FrameLayout.LayoutParams(-1, -1));
 
-            FrameLayout ring = new FrameLayout(activity);
+            FrameLayout ring = new FrameLayout(c);
             ring.setBackground(Ui.oval(PAGE_BG));
-            ring.setPadding(dp(3), dp(3), dp(3), dp(3));
-            dot = new View(activity);
+            ring.setPadding(Ui.dp(c, 3), Ui.dp(c, 3), Ui.dp(c, 3), Ui.dp(c, 3));
+            dot = new View(c);
             ring.addView(dot, new FrameLayout.LayoutParams(-1, -1));
-            holder.addView(ring, new FrameLayout.LayoutParams(dp(16), dp(16), Gravity.BOTTOM | Gravity.END));
+            holder.addView(ring, new FrameLayout.LayoutParams(Ui.dp(c, 16), Ui.dp(c, 16), Gravity.BOTTOM | Gravity.END));
             row.addView(holder, hlp);
 
-            name = Ui.text(activity, "", Ui.TEXT_HEADER, 16);
+            name = Ui.text(c, "", Ui.TEXT_HEADER, 16);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
 
-            botTag = Ui.text(activity, "BOT", Color.WHITE, 10);
+            botTag = Ui.text(c, "BOT", Color.WHITE, 10);
             botTag.setTypeface(null, Typeface.BOLD);
-            botTag.setPadding(dp(5), dp(1), dp(5), dp(1));
-            botTag.setBackground(Ui.rounded(Ui.BLURPLE, dp(4)));
+            botTag.setPadding(Ui.dp(c, 5), Ui.dp(c, 1), Ui.dp(c, 5), Ui.dp(c, 1));
+            botTag.setBackground(Ui.rounded(Ui.BLURPLE, Ui.dp(c, 4)));
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-2, -2);
-            tlp.setMarginStart(dp(8));
+            tlp.setMarginStart(Ui.dp(c, 8));
             row.addView(botTag, tlp);
         }
 
         void bind(final Entry e) {
+            if (activity == null) return;
             String display = e.displayName();
             name.setText(display);
             name.setTextColor(MemberPresentation.nameColor(activity, e));
@@ -143,7 +146,8 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             dot.setBackground(Ui.oval(MemberPresentation.statusColor(e.status)));
 
             avatarWrap.setBackground(Ui.oval(Ui.avatarColor(e.userId)));
-            initial.setText(display.isEmpty() ? "?" : display.substring(0, display.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
+            initial.setText(display.isEmpty() ? "?"
+                : display.substring(0, display.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
             boolean has = Ui.isReal(e.avatar) && e.userId != null;
             activity.imageLoader.load(has
                 ? "https://cdn.discordapp.com/avatars/" + e.userId + "/" + e.avatar + ".png?size=64" : null, avatar);
@@ -155,20 +159,20 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     }
 
     final class PlaceholderHolder extends RecyclerView.ViewHolder {
-        PlaceholderHolder() {
-            super(new LinearLayout(activity));
+        PlaceholderHolder(Context c) {
+            super(new LinearLayout(c));
             LinearLayout row = (LinearLayout) itemView;
-            row.setLayoutParams(new RecyclerView.LayoutParams(-1, dp(52)));
+            row.setLayoutParams(new RecyclerView.LayoutParams(-1, Ui.dp(c, 52)));
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(16), 0, dp(16), 0);
-            View circle = new View(activity);
+            row.setPadding(Ui.dp(c, 16), 0, Ui.dp(c, 16), 0);
+            View circle = new View(c);
             circle.setBackground(Ui.oval(Ui.BG_INPUT));
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(40), dp(40));
-            clp.setMarginEnd(dp(12));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
+            clp.setMarginEnd(Ui.dp(c, 12));
             row.addView(circle, clp);
-            View bar = new View(activity);
-            bar.setBackground(Ui.rounded(Ui.BG_INPUT, dp(6)));
-            row.addView(bar, new LinearLayout.LayoutParams(dp(130), dp(12)));
+            View bar = new View(c);
+            bar.setBackground(Ui.rounded(Ui.BG_INPUT, Ui.dp(c, 6)));
+            row.addView(bar, new LinearLayout.LayoutParams(Ui.dp(c, 130), Ui.dp(c, 12)));
         }
     }
 }

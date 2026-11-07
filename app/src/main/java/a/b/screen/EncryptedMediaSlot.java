@@ -11,21 +11,27 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 import java.io.File;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.Collections;
 import a.b.model.Message;
 import a.b.util.MediaCache;
 
 /** Encrypted attachment tile: consent, thumbnail, progress, full-screen. */
 final class EncryptedMediaSlot {
     private static final int MATCH = -1, WRAP = -2;
-    private static final int LOADING = 0, CONFIRM = 1, FAILED = 2, LOADED = 3, TOO_LARGE = 4;
+    private static final int LOADING = 0, CONFIRM = 1, FAILED = 2, LOADED = 3, TOO_LARGE = 4, OPENING = 5;
     private static final int EMBED_BG = MessageAdapter.EMBED_BG;
     private static final int MUTED = MessageAdapter.MUTED;
+    private static final int APPROVED_MAX = 500;
 
-    private static final Set<String> approvedMedia = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<String> approvedMedia = Collections.newSetFromMap(
+        new java.util.LinkedHashMap<String, Boolean>(16, 0.75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > APPROVED_MAX;
+            }
+        });
 
     private final MessageAdapter adapter;
     private final Message.Attachment a;
@@ -153,13 +159,15 @@ final class EncryptedMediaSlot {
     private void onClick() {
         if (state == LOADED) openFull();
         else if (state == CONFIRM || state == FAILED) {
-            approvedMedia.add(consentKey);
+            if (!consentKey.isEmpty()) approvedMedia.add(consentKey);
             start(true);
         }
+        // LOADING / OPENING / TOO_LARGE: no-op.
     }
 
     private void openFull() {
         if (adapter.activity == null) return;
+        state = OPENING;
         status.setVisibility(View.VISIBLE);
         status.setText("\uD83D\uDD12 Preparing\u2026");
         openHandle.cancel();
@@ -167,11 +175,13 @@ final class EncryptedMediaSlot {
             @Override public void onProgress(long done, long total) {}
             @Override public void onNeedsConfirm(long bytes) {}
             @Override public void onFile(File plaintext) {
+                state = LOADED;
                 status.setVisibility(View.GONE);
                 if (video) showFullscreenVideo(plaintext);
                 else showFullscreenFile(plaintext, a.filename);
             }
             @Override public void onFailure(MediaCache.Failure f) {
+                state = LOADED;
                 status.setText("\u26A0 Couldn't open");
             }
         });

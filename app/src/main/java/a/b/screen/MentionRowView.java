@@ -46,7 +46,6 @@ final class MentionRowView {
         View bar = new View(activity);
         bar.setBackgroundColor(m.unread ? Ui.YELLOW : 0);
         LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(dp(3), -1);
-        barLp.setMarginEnd(dp(10));
         barLp.setMargins(-dp(16), -dp(12), 0, -dp(12));
         barLp.setMarginEnd(dp(13));
         row.addView(bar, barLp);
@@ -58,8 +57,7 @@ final class MentionRowView {
         LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         avLp.setMarginEnd(dp(12));
         boolean hasAvatar = Ui.isReal(m.authorAvatar) && m.authorId != null;
-        activity.imageLoader.load(hasAvatar
-            ? "https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128" : null, avatar);
+        activity.imageLoader.load(hasAvatar ? "https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128" : null, avatar);
         row.addView(avatar, avLp);
 
         LinearLayout col = new LinearLayout(activity);
@@ -67,7 +65,8 @@ final class MentionRowView {
 
         LinearLayout head = new LinearLayout(activity);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView name = Ui.text(activity, m.authorName, Ui.TEXT_HEADER, 15);
+        String author = Ui.isReal(m.authorName) ? m.authorName : "Unknown";
+        TextView name = Ui.text(activity, author, Ui.TEXT_HEADER, 15);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -102,17 +101,21 @@ final class MentionRowView {
     private String whereLabel(MentionItem m) {
         StringBuilder sb = new StringBuilder();
         if (m.everyone) sb.append("@everyone \u00B7 ");
-        String ch = activity.channelNameCache.get(m.channelId);
-        if (ch == null) {
-            channelFetcher.request(m.channelId);
-            sb.append(m.guildResolved && m.guildId == null ? "Direct message" : "#\u2026");
+        if (m.channelId == null) {
+            sb.append("(unknown channel)");
         } else {
-            sb.append('#').append(ch);
+            String ch = activity.channelNameCache.get(m.channelId);
+            if (ch == null) {
+                channelFetcher.request(m.channelId);
+                sb.append(m.guildResolved && m.guildId == null ? "Direct message" : "#\u2026");
+            } else {
+                sb.append('#').append(ch);
+            }
         }
         if (m.guildId != null) {
             List<Guild> gs = activity.guildCache.get("me");
             if (gs != null) {
-                for (Guild g : gs) if (g.id.equals(m.guildId)) { sb.append(" \u00B7 ").append(g.name); break; }
+                for (Guild g : gs) if (g != null && g.id != null && g.id.equals(m.guildId)) { sb.append(" \u00B7 ").append(g.name); break; }
             }
         }
         return sb.toString();
@@ -133,7 +136,8 @@ final class MentionRowView {
         Matcher r = ROLE.matcher(c);
         while (r.find()) {
             a.b.model.Role role = activity.roleCache.get(r.group(1));
-            r.appendReplacement(sb, Matcher.quoteReplacement("@" + (role != null ? role.name : "role")));
+            String roleName = (role != null && Ui.isReal(role.name)) ? role.name : "role";
+            r.appendReplacement(sb, Matcher.quoteReplacement("@" + roleName));
         }
         r.appendTail(sb);
         c = sb.toString();

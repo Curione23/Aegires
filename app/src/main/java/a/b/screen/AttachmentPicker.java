@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import java.io.InputStream;
@@ -39,8 +40,16 @@ final class AttachmentPicker {
         if (uri == null) return;
 
         ContentResolver cr = host.activity.getContentResolver();
-        String mime = cr.getType(uri);
-        String name = FileNames.randomFor(fileName(cr, uri), mime != null ? mime : "application/octet-stream");
+        String mime = null;
+        try { mime = cr.getType(uri); } catch (Exception ignored) {}
+
+        String baseName;
+        try {
+            baseName = fileName(cr, uri, mime);
+        } catch (Exception e) {
+            baseName = defaultNameFor(mime);
+        }
+        String name = FileNames.randomFor(baseName, mime != null ? mime : "application/octet-stream");
 
         int w = 0, h = 0;
         if (mime != null && mime.startsWith("video/")) {
@@ -56,30 +65,60 @@ final class AttachmentPicker {
                     if ("90".equals(rotation) || "270".equals(rotation)) { w = height; h = width; }
                     else { w = width; h = height; }
                 }
-                retriever.release();
-            } catch (Exception e) {
+            } catch (Exception ignored) {
+            } finally {
                 try { retriever.release(); } catch (Exception ignored) {}
             }
         } else {
             try (InputStream is = cr.openInputStream(uri)) {
-                android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
-                bounds.inJustDecodeBounds = true;
-                android.graphics.BitmapFactory.decodeStream(is, null, bounds);
-                w = bounds.outWidth;
-                h = bounds.outHeight;
+                if (is != null) {
+                    android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+                    bounds.inJustDecodeBounds = true;
+                    android.graphics.BitmapFactory.decodeStream(is, null, bounds);
+                    w = bounds.outWidth;
+                    h = bounds.outHeight;
+                }
             } catch (Exception ignored) {}
+            int orientation = ExifInterface.ORIENTATION_NORMAL;
+            try (InputStream is = cr.openInputStream(uri)) {
+                if (is != null) {
+                    ExifInterface exif = new ExifInterface(is);
+                    orientation = exif.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+                }
+            } catch (Exception ignored) {}
+            if (orientation == ExifInterface.ORIENTATION_ROTATE_90
+                || orientation == ExifInterface.ORIENTATION_ROTATE_270
+                || orientation == ExifInterface.ORIENTATION_TRANSPOSE
+                || orientation == ExifInterface.ORIENTATION_TRANSVERSE) {
+                int tmp = w;
+                w = h;
+                h = tmp;
+            }
         }
 
-        host.composer().setAttachment(uri, name, mime != null ? mime : "application/octet-stream", w, h);
+        MessageComposerView composer = host.composer();
+        if (composer == null) return;
+        composer.setAttachment(uri, name, mime != null ? mime : "application/octet-stream", w, h);
     }
 
-    private static String fileName(ContentResolver cr, Uri uri) {
+    private static String fileName(ContentResolver cr, Uri uri, String mime) {
         try (Cursor c = cr.query(uri, null, null, null, null)) {
             if (c != null && c.moveToFirst()) {
                 int col = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (col >= 0 && !c.isNull(col)) return c.getString(col);
+                if (col >= 0 && !c.isNull(col)) {
+                    String display = c.getString(col);
+                    if (display != null && !display.isEmpty()) return display;
+                }
             }
         }
-        return "image.png";
+        return defaultNameFor(mime);
+    }
+
+    private static String defaultNameFor(String mime) {
+        if (mime == null) return "attachment";
+        if (mime.startsWith("video/")) return "video.mp4";
+        if (mime.startsWith("image/")) return "image.png";
+        return "attachment";
     }
 }

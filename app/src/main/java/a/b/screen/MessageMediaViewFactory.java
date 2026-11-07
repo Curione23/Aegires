@@ -56,6 +56,7 @@ final class MessageMediaViewFactory {
     }
 
     View media(String preview, boolean crop, String openUrl, boolean video, int[] size) {
+        if (adapter.activity == null || size == null || size.length < 2) return null;
         boolean show = preview != null && adapter.imageLoader != null;
         FrameLayout frame = new FrameLayout(adapter.activity);
         frame.setLayoutParams(lp(size[0], size[1], 0, adapter.dp(4), 0, adapter.dp(4)));

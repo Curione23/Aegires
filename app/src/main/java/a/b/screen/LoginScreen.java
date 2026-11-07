@@ -67,6 +67,7 @@ public class LoginScreen implements Screen {
         form.addView(connect, new LinearLayout.LayoutParams(-1, dp(48)));
 
         final Runnable submit = () -> {
+            if (activity == null) return;
             String token = tokenInput.getText().toString().trim();
             if (token.length() > 1 && (token.startsWith("\"") && token.endsWith("\""))) {
                 token = token.substring(1, token.length() - 1).trim();
@@ -94,5 +95,8 @@ public class LoginScreen implements Screen {
     @Override public View getView() { return view; }
     @Override public void onResume() {}
     @Override public void onPause() {}
-    @Override public void onDestroy() { activity = null; }
+    @Override public void onDestroy() {
+        activity = null;
+        view = null;
+    }
 }

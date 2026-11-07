@@ -13,6 +13,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import a.b.model.Message;
+import a.b.util.Crypto;
 import a.b.util.Ui;
 
 /** Input pill, reply bar, attach bar, and E2EE toggle pill. */
@@ -156,8 +157,6 @@ final class MessageComposerView {
         return e2eePill;
     }
 
-    // ── state queries ───────────────────────────────────────────────────────
-
     String text() { return input == null ? "" : input.getText().toString(); }
     String getEditingId() { return editingId; }
     String getReplyToId() { return replyToId; }
@@ -169,7 +168,7 @@ final class MessageComposerView {
 
     void clearText() { if (input != null) input.setText(""); }
     void restoreText(String text) {
-        if (input == null) return;
+        if (input == null || text == null) return;
         input.setText(text);
         input.setSelection(text.length());
     }
@@ -195,22 +194,33 @@ final class MessageComposerView {
     }
 
     void beginReply(Message msg) {
+        if (msg == null || host.activity == null || replyBar == null || replyText == null) return;
         if (editingId != null) cancelEdit();
         replyToId = msg.id;
-        String preview = msg.content == null ? "" : msg.content.replace('\n', ' ');
+        String preview;
+        if (msg.content == null) {
+            preview = "";
+        } else if (Crypto.looksEncrypted(msg.content)) {
+            preview = "[encrypted message]";
+        } else {
+            preview = msg.content.replace('\n', ' ');
+        }
         if (preview.length() > REPLY_PREVIEW_LEN) preview = preview.substring(0, REPLY_PREVIEW_LEN) + "\u2026";
-        replyText.setText("Replying to " + host.actions().nameOf(msg) + (preview.isEmpty() ? "" : ": " + preview));
+        String who = host.actions() != null ? host.actions().nameOf(msg) : "Unknown";
+        replyText.setText("Replying to " + who + (preview.isEmpty() ? "" : ": " + preview));
         replyBar.setVisibility(View.VISIBLE);
-        input.requestFocus();
+        if (input != null) input.requestFocus();
     }
 
     void cancelReply() {
         replyToId = null;
-        replyBar.setVisibility(View.GONE);
+        if (replyBar != null) replyBar.setVisibility(View.GONE);
     }
 
     void beginEdit(Message msg) {
+        if (msg == null || host.activity == null || input == null) return;
         cancelReply();
+        clearAttachment();
         editingId = msg.id;
         String content = msg.content == null ? "" : msg.content;
         input.setText(content);
@@ -218,14 +228,17 @@ final class MessageComposerView {
         input.setHint(HINT_EDIT);
         input.requestFocus();
         setAttachCancel(true);
-        android.view.inputmethod.InputMethodManager imm =
-            (android.view.inputmethod.InputMethodManager) host.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
-        imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        try {
+            android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) host.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        } catch (Exception ignored) {}
         host.scrollToMessage(msg.id);
     }
 
     void cancelEdit() {
         editingId = null;
+        if (input == null) return;
         input.setText("");
         input.setHint(host.encOn() ? HINT_ENCRYPTED : HINT_MESSAGE);
         setAttachCancel(false);
@@ -235,14 +248,14 @@ final class MessageComposerView {
         if (host.forced || host.activity == null || host.activity.e2eeKey == null) return;
         host.activity.e2eeEnabled = !host.activity.e2eeEnabled;
         updateE2eePillState();
-        if (input != null) {
-            input.setHint(host.activity.e2eeEnabled ? HINT_ENCRYPTED : HINT_MESSAGE);
-        }
         host.activity.toast(host.activity.e2eeEnabled ? "Encryption enabled" : "Encryption disabled");
     }
 
     void updateE2eePillState() {
         if (host.activity == null || e2eePill == null) return;
+        if (input != null && editingId == null) {
+            input.setHint(host.encOn() ? HINT_ENCRYPTED : HINT_MESSAGE);
+        }
         if (host.forced || host.activity.e2eeKey == null) {
             e2eePill.setVisibility(View.GONE);
             return;
@@ -264,7 +277,7 @@ final class MessageComposerView {
         if (attachBar == null) return;
         boolean has = pendingFileUri != null;
         attachBar.setVisibility(has ? View.VISIBLE : View.GONE);
-        if (has) attachText.setText(pendingFileName != null ? pendingFileName : "attachment");
+        if (has && attachText != null) attachText.setText(pendingFileName != null ? pendingFileName : "attachment");
         updateSendState();
     }
 

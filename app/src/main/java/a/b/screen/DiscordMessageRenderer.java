@@ -18,6 +18,7 @@ import android.text.style.ImageSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
+import android.text.style.URLSpan;
 import android.view.View;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -29,6 +30,7 @@ import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import a.b.model.Message;
 import a.b.model.Role;
+import a.b.util.DiscordMarkdown;
 
 /** Parses message text into a styled, mention-resolved, emoji-inlined Spannable. */
 final class DiscordMessageRenderer {
@@ -60,7 +62,7 @@ final class DiscordMessageRenderer {
 
     CharSequence render(String raw, Message msg, boolean markdown) {
         if (raw == null || raw.isEmpty()) return "";
-        SpannableStringBuilder sb = markdown ? a.b.util.DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
+        SpannableStringBuilder sb = markdown ? DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
         int jumbo = markdown ? emojiOnly(raw) : 0;
         if (msg.id != null) emojis(sb, msg.id, jumbo != 0);
         mentions(sb, msg);
@@ -184,16 +186,17 @@ final class DiscordMessageRenderer {
         LinkedList<MatchResult> out = new LinkedList<>();
         Matcher m = p.matcher(sb.toString());
         while (m.find()) {
-            if (!isCode(sb, m.start(), m.end())) out.addFirst(m.toMatchResult());
+            if (!isProtected(sb, m.start(), m.end())) out.addFirst(m.toMatchResult());
         }
         return out;
     }
 
-    private static boolean isCode(Spanned sb, int start, int end) {
+    private static boolean isProtected(Spanned sb, int start, int end) {
         for (TypefaceSpan t : sb.getSpans(start, end, TypefaceSpan.class)) {
             if ("monospace".equals(t.getFamily())) return true;
         }
-        return false;
+        if (sb.getSpans(start, end, URLSpan.class).length > 0) return true;
+        return sb.getSpans(start, end, DiscordMarkdown.LinkSpan.class).length > 0;
     }
 
     private static void wrap(SpannableStringBuilder sb, Pattern p, int g, Styler styler) {
@@ -208,6 +211,7 @@ final class DiscordMessageRenderer {
     private static void sub(SpannableStringBuilder sb, Pattern p, Text text, Styler styler) {
         for (MatchResult m : matches(sb, p)) {
             CharSequence r = text.of(m);
+            if (r == null) continue;
             int start = m.start(), end = m.end();
             Object[] spans = sb.getSpans(start, end, Object.class);
             int[] flags = new int[spans.length];

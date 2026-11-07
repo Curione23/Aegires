@@ -10,9 +10,11 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import a.b.api.ApiClient;
 import a.b.util.Ui;
 
@@ -20,16 +22,21 @@ import a.b.util.Ui;
 final class TypingIndicator {
     private static final int MATCH = -1;
     private static final long TYPING_EXPIRY_MS = 10000;
+    private static final long NICK_RETRY_COOLDOWN_MS = 15_000;
+
+    private static final class TypingEntry {
+        final String name;
+        final long at;
+        TypingEntry(String name, long at) { this.name = name; this.at = at; }
+    }
 
     private final MessageListScreen host;
     private final TextView typingText;
-    private final Map<String, String> typingUsers = new HashMap<>();
+    private final Map<String, TypingEntry> typingUsers = new HashMap<>();
     private final Set<String> typingNickChecked = new HashSet<>();
+    private final ConcurrentHashMap<String, Long> nickFailedUntil = new ConcurrentHashMap<>();
     private final Handler typingHandler = new Handler(Looper.getMainLooper());
-    private final Runnable clearTypingRunnable = () -> {
-        typingUsers.clear();
-        update();
-    };
+    private final Runnable expiryCheck = this::expiryCheck;
 
     TypingIndicator(MessageListScreen host) {
         this.host = host;
@@ -47,7 +54,7 @@ final class TypingIndicator {
     View getView() { return typingText; }
 
     void handleTypingStart(JSONObject d) {
-        if (host.activity == null) return;
+        if (host.activity == null || d == null) return;
         String userId = d.optString("user_id", null);
         if (userId == null || userId.equals(host.activity.selfId())) return;
         String nick = null;
@@ -67,42 +74,83 @@ final class TypingIndicator {
                     : host.activity.userNameCache.get(userId);
         if (!isReal(name)) name = "Someone";
         if (!isReal(nick)) lookupTypingNick(userId);
-        typingUsers.put(userId, name);
+        typingUsers.put(userId, new TypingEntry(name, System.currentTimeMillis()));
         update();
-        typingHandler.removeCallbacks(clearTypingRunnable);
-        typingHandler.postDelayed(clearTypingRunnable, TYPING_EXPIRY_MS);
+        scheduleNextExpiry();
     }
 
     void removeUser(String userId) {
-        if (userId != null && typingUsers.remove(userId) != null) update();
+        if (userId != null && typingUsers.remove(userId) != null) {
+            update();
+            scheduleNextExpiry();
+        }
     }
 
     private void lookupTypingNick(final String userId) {
         if (host.guildId == null || host.activity == null || host.activity.apiClient == null) return;
         final String key = host.guildId + "_" + userId;
-        if (!typingNickChecked.add(key)) return;
+        if (typingNickChecked.contains(key)) return;
+        Long until = nickFailedUntil.get(key);
+        if (until != null) {
+            if (System.currentTimeMillis() < until) return;
+            nickFailedUntil.remove(key);
+        }
         host.activity.apiClient.fetchMember(host.guildId, userId, new ApiClient.Callback<JSONObject>() {
             @Override public void onSuccess(JSONObject member) {
-                if (host.activity == null) return;
+                if (host.activity == null || member == null) {
+                    nickFailedUntil.put(key, System.currentTimeMillis() + NICK_RETRY_COOLDOWN_MS);
+                    return;
+                }
                 String nick = member.isNull("nick") ? null : member.optString("nick", null);
-                if (!isReal(nick)) return;
+                if (!isReal(nick)) {
+                    // Server acknowledged but has no nick — nothing to learn, don't retry.
+                    typingNickChecked.add(key);
+                    return;
+                }
                 host.activity.userNickCache.put(key, nick);
-                if (typingUsers.containsKey(userId)) {
-                    typingUsers.put(userId, nick);
+                typingNickChecked.add(key);
+                TypingEntry existing = typingUsers.get(userId);
+                if (existing != null) {
+                    typingUsers.put(userId, new TypingEntry(nick, existing.at));
                     update();
                 }
             }
-            @Override public void onError(String err) {}
+            @Override public void onError(String err) {
+                nickFailedUntil.put(key, System.currentTimeMillis() + NICK_RETRY_COOLDOWN_MS);
+            }
         });
+    }
+
+    private void expiryCheck() {
+        update();
+        if (!typingUsers.isEmpty()) scheduleNextExpiry();
+    }
+
+    private void scheduleNextExpiry() {
+        typingHandler.removeCallbacks(expiryCheck);
+        long now = System.currentTimeMillis();
+        long earliest = Long.MAX_VALUE;
+        for (TypingEntry e : typingUsers.values()) {
+            long expiresAt = e.at + TYPING_EXPIRY_MS;
+            if (expiresAt < earliest) earliest = expiresAt;
+        }
+        if (earliest == Long.MAX_VALUE) return;
+        typingHandler.postDelayed(expiryCheck, Math.max(0, earliest - now));
     }
 
     private void update() {
         if (host.activity == null || typingText == null) return;
+        long cutoff = System.currentTimeMillis() - TYPING_EXPIRY_MS;
+        Iterator<Map.Entry<String, TypingEntry>> it = typingUsers.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue().at < cutoff) it.remove();
+        }
         if (typingUsers.isEmpty()) {
             typingText.setVisibility(View.INVISIBLE);
             return;
         }
-        List<String> names = new ArrayList<>(typingUsers.values());
+        List<String> names = new ArrayList<>(typingUsers.size());
+        for (TypingEntry e : typingUsers.values()) names.add(e.name);
         StringBuilder sb = new StringBuilder();
         if (names.size() == 1) sb.append(names.get(0)).append(" is typing...");
         else if (names.size() == 2) sb.append(names.get(0)).append(" and ").append(names.get(1)).append(" are typing...");
@@ -114,6 +162,7 @@ final class TypingIndicator {
 
     void release() {
         typingHandler.removeCallbacksAndMessages(null);
+        typingUsers.clear();
     }
 
     private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }

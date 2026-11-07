@@ -90,8 +90,9 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
     }
 
     private void copyId() {
-        if (activity == null) return;
+        if (activity == null || userId == null) return;
         ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm == null) { activity.toast("Couldn't copy user ID"); return; }
         cm.setPrimaryClip(ClipData.newPlainText("user id", userId));
         activity.toast("Copied user ID");
     }
@@ -121,7 +122,7 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
         if (guildId == null || activity == null) return;
         activity.apiClient.fetchMember(guildId, userId, new ApiClient.Callback<JSONObject>() {
             @Override public void onSuccess(JSONObject member) {
-                if (activity == null) return;
+                if (activity == null || member == null) return;
                 nick = member.isNull("nick") ? null : member.optString("nick", null);
                 joinedMs = parseIso(member.isNull("joined_at") ? null : member.optString("joined_at", null));
                 headerView.applyName(user, nick);
@@ -134,6 +135,7 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
                 activity.apiClient.fetchRoles(guildId, new ApiClient.Callback<Map<String, Role>>() {
                     @Override public void onSuccess(Map<String, Role> roles) {
                         if (activity == null) return;
+                        if (roles == null) return;
                         activity.roleCache.putAll(roles);
                         rolesView.render(roleIds, roles);
                     }
@@ -164,6 +166,7 @@ public class ProfileScreen implements Screen, ApiClient.Callback<DiscordUser> {
     @Override public void onPause() {}
     @Override public void onDestroy() {
         activity = null;
+        view = null;
         headerView = null;
         detailsView = null;
         rolesView = null;

@@ -27,6 +27,8 @@ final class DmRowView {
     }
 
     View build(final DmChannel dm, String self) {
+        if (activity == null) return null;
+        if (dm == null) return new View(activity);
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -41,7 +43,9 @@ final class DmRowView {
         col.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
 
         int unread = activity.mentions.unreadForChannel(dm.id);
-        TextView name = Ui.text(activity, dm.displayName(self), unread > 0 ? Ui.TEXT_HEADER : Ui.TEXT, 16);
+        String display = dm.displayName(self);
+        if (display == null || display.isEmpty()) display = "Unknown";
+        TextView name = Ui.text(activity, display, unread > 0 ? Ui.TEXT_HEADER : Ui.TEXT, 16);
         name.setTypeface(null, unread > 0 ? Typeface.BOLD : Typeface.NORMAL);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -64,9 +68,11 @@ final class DmRowView {
             row.addView(badge, lp);
         }
 
-        row.setOnClickListener(v -> {
-            if (activity != null) activity.navigate(new MessageListScreen(null, dm.id));
-        });
+        if (dm.id != null) {
+            row.setOnClickListener(v -> {
+                if (activity != null) activity.navigate(new MessageListScreen(null, dm.id));
+            });
+        }
         return row;
     }
 
@@ -86,7 +92,7 @@ final class DmRowView {
         initial.setGravity(Gravity.CENTER);
         wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
 
-        if (r != null && r.hasAvatar()) {
+        if (r != null && r.hasAvatar() && r.id != null) {
             ImageView iv = new ImageView(activity);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             activity.imageLoader.load(AVATAR_URL + r.id + "/" + r.avatar + ".png?size=128", iv);

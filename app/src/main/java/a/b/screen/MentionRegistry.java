@@ -1,23 +1,23 @@
 package a.b.screen;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import a.b.api.ApiClient;
 import a.b.model.DiscordUser;
 import a.b.model.Message;
 
 /** Resolves <@user>, <#channel>, <@&role> mentions; lazy-fetches unknown names. */
 final class MentionRegistry {
+    private static final long RETRY_COOLDOWN_MS = 15_000;
+
     private final MessageAdapter adapter;
     private final Set<String> pendingMemberFetches = sync();
     private final Set<String> checkedMembers = sync();
     private final Set<String> pendingUserFetches = sync();
-    private final Set<String> failedUserFetches = sync();
     private final Set<String> pendingChannelFetches = sync();
-    private final Set<String> failedChannelFetches = sync();
+    private final ConcurrentHashMap<String, Long> failedUntil = new ConcurrentHashMap<>();
 
     MentionRegistry(MessageAdapter adapter) {
         this.adapter = adapter;
@@ -48,57 +48,71 @@ final class MentionRegistry {
     private void requestMember(final String id) {
         if (adapter.guildId == null || adapter.activity == null || adapter.activity.apiClient == null) return;
         final String key = adapter.guildId + "_" + id;
-        if (checkedMembers.contains(key) || !pendingMemberFetches.add(key)) return;
+        if (checkedMembers.contains(key) || !canRetry("m:" + key) || !pendingMemberFetches.add(key)) return;
         final String gid = adapter.guildId;
         adapter.activity.apiClient.fetchMember(gid, id, new ApiClient.Callback<org.json.JSONObject>() {
             @Override public void onSuccess(org.json.JSONObject member) {
                 pendingMemberFetches.remove(key);
-                checkedMembers.add(key);
                 if (adapter.activity == null) return;
                 String nick = member.isNull("nick") ? null : member.optString("nick", null);
                 boolean has = isReal(nick);
                 if (has) adapter.activity.userNickCache.put(key, nick);
+                checkedMembers.add(key);
                 if (has) adapter.ui.post(() -> { invalidate(id, true); adapter.refreshUser(id); });
             }
             @Override public void onError(String err) {
                 pendingMemberFetches.remove(key);
-                checkedMembers.add(key);
+                markFailed("m:" + key);
             }
         });
     }
 
     private void requestUserName(String id) {
-        if (!claim(id, pendingUserFetches, failedUserFetches)) return;
+        if (!claim("u:", id, pendingUserFetches)) return;
         adapter.activity.apiClient.fetchUserProfile(id, new ApiClient.Callback<DiscordUser>() {
             @Override public void onSuccess(DiscordUser u) {
                 String name = u == null ? null : isReal(u.globalName) ? u.globalName : u.username;
                 if (isReal(name) && adapter.activity != null && adapter.activity.userNameCache != null) adapter.activity.userNameCache.put(id, name);
-                settle(id, pendingUserFetches, failedUserFetches, isReal(name), true);
+                settle("u:", id, pendingUserFetches, isReal(name), true);
             }
-            @Override public void onError(String err) { settle(id, pendingUserFetches, failedUserFetches, false, true); }
+            @Override public void onError(String err) { settle("u:", id, pendingUserFetches, false, true); }
         });
     }
 
     private void requestChannelName(String id) {
-        if (!claim(id, pendingChannelFetches, failedChannelFetches)) return;
+        if (!claim("c:", id, pendingChannelFetches)) return;
         adapter.activity.apiClient.fetchChannelName(id, new ApiClient.Callback<String>() {
             @Override public void onSuccess(String name) {
                 if (isReal(name) && adapter.activity != null && adapter.activity.channelNameCache != null) adapter.activity.channelNameCache.put(id, name);
-                settle(id, pendingChannelFetches, failedChannelFetches, isReal(name), false);
+                settle("c:", id, pendingChannelFetches, isReal(name), false);
             }
-            @Override public void onError(String err) { settle(id, pendingChannelFetches, failedChannelFetches, false, false); }
+            @Override public void onError(String err) { settle("c:", id, pendingChannelFetches, false, false); }
         });
     }
 
-    private boolean claim(String id, Set<String> pending, Set<String> failed) {
+    private boolean claim(String prefix, String id, Set<String> pending) {
         return id != null && adapter.activity != null && adapter.activity.apiClient != null
-            && !failed.contains(id) && pending.add(id);
+            && canRetry(prefix + id) && pending.add(id);
     }
 
-    private void settle(String id, Set<String> pending, Set<String> failed, boolean ok, boolean isUser) {
+    private void settle(String prefix, String id, Set<String> pending, boolean ok, boolean isUser) {
         pending.remove(id);
-        if (!ok) { failed.add(id); return; }
+        if (!ok) {
+            markFailed(prefix + id);
+            return;
+        }
         adapter.ui.post(() -> invalidate(id, isUser));
+    }
+
+    private boolean canRetry(String key) {
+        Long until = failedUntil.get(key);
+        if (until == null) return true;
+        if (System.currentTimeMillis() >= until) { failedUntil.remove(key); return true; }
+        return false;
+    }
+
+    private void markFailed(String key) {
+        failedUntil.put(key, System.currentTimeMillis() + RETRY_COOLDOWN_MS);
     }
 
     private void invalidate(String id, boolean isUser) {

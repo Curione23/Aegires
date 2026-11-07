@@ -23,6 +23,9 @@ public class DmListScreen implements Screen, MentionStore.Listener {
     private String error;
     private DmRowView rowView;
 
+    /** Debounced re-render for mention-store pings; canceled in onDestroy. */
+    private final Runnable renderRunnable = this::render;
+
     @Override
     public View onCreateView(final MainActivity host, ViewGroup parent) {
         this.activity = host;
@@ -42,10 +45,17 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         scroll.addView(listContainer, new ViewGroup.LayoutParams(-1, -2));
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
+        fetch();
+        return view = root;
+    }
+
+    private void fetch() {
+        if (activity == null || destroyed) return;
+        error = null;
         render();
-        host.apiClient.fetchDms(new ApiClient.Callback<List<DmChannel>>() {
+        activity.apiClient.fetchDms(new ApiClient.Callback<List<DmChannel>>() {
             @Override public void onSuccess(List<DmChannel> result) {
-                if (destroyed) return;
+                if (destroyed || activity == null) return;
                 dms = new ArrayList<>(result);
                 Collections.sort(dms, (a, b) -> {
                     String x = a.lastMessageId == null ? "0" : a.lastMessageId;
@@ -60,14 +70,18 @@ public class DmListScreen implements Screen, MentionStore.Listener {
                 render();
             }
         });
-        return view = root;
     }
 
     private void render() {
-        if (listContainer == null || activity == null) return;
+        if (destroyed || listContainer == null || activity == null) return;
         listContainer.removeAllViews();
         if (error != null) {
-            listContainer.addView(Ui.emptyState(activity, "Failed to load DMs.\n" + error));
+            android.widget.TextView t = Ui.emptyState(activity, "Failed to load DMs.\nTap to retry.");
+            t.setOnClickListener(v -> {
+                if (destroyed || activity == null) return;
+                fetch();
+            });
+            listContainer.addView(t);
         } else if (dms == null) {
             listContainer.addView(Ui.emptyState(activity, "Loading\u2026"));
         } else if (dms.isEmpty()) {
@@ -78,7 +92,11 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         }
     }
 
-    @Override public void onMentionsChanged() { render(); }
+    @Override public void onMentionsChanged() {
+        if (activity == null || destroyed) return;
+        activity.handler.removeCallbacks(renderRunnable);
+        activity.handler.postDelayed(renderRunnable, 120);
+    }
 
     private int dp(int v) { return Ui.dp(activity, v); }
 
@@ -88,8 +106,12 @@ public class DmListScreen implements Screen, MentionStore.Listener {
     @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
     @Override public void onDestroy() {
         destroyed = true;
-        if (activity != null) activity.mentions.removeListener(this);
+        if (activity != null) {
+            activity.mentions.removeListener(this);
+            activity.handler.removeCallbacks(renderRunnable);
+        }
         activity = null;
+        view = null;
         listContainer = null;
         rowView = null;
     }

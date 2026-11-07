@@ -42,7 +42,6 @@ public class MainActivity extends Activity {
     public javax.crypto.SecretKey e2eeKey;
     public boolean e2eeEnabled;
     public Crypto.Preset e2eePreset = Crypto.Preset.AES256;
-    private static final long HEAP_REPORT_MS = 30000L;
     public GatewayClient gateway;
     public MentionStore mentions;
     public MemberListStore memberList = new MemberListStore();
@@ -57,7 +56,8 @@ public class MainActivity extends Activity {
     public final ConcurrentHashMap<String, GuildInfo> guildInfoCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, List<String>> userRoleCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, String> userNickCache = new ConcurrentHashMap<>();
-    
+    public final java.util.concurrent.atomic.AtomicInteger derivationGen = new java.util.concurrent.atomic.AtomicInteger(0);
+    private boolean firstResume = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,7 +65,7 @@ public class MainActivity extends Activity {
         setTheme(android.R.style.Theme_DeviceDefault_NoActionBar);
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        
+
         rootFrame = new FrameLayout(this);
         rootFrame.setBackgroundColor(Ui.BG_TERTIARY);
         getWindow().setStatusBarColor(Ui.BG_TERTIARY);
@@ -110,9 +110,9 @@ public class MainActivity extends Activity {
             gateway.shutdown();
             gateway = null;
         }
-        int intents = GatewayClient.INTENT_GUILDS | GatewayClient.INTENT_GUILD_MESSAGES | 
+        int intents = GatewayClient.INTENT_GUILDS | GatewayClient.INTENT_GUILD_MESSAGES |
                       GatewayClient.INTENT_DIRECT_MESSAGES | GatewayClient.INTENT_MESSAGE_CONTENT | (1 << 11);
-        
+
         gateway = apiClient.createGateway(intents, new GatewayClient.Listener() {
             @Override public void onReady(JSONObject ready) {
                 JSONObject u = ready != null ? ready.optJSONObject("user") : null;
@@ -202,6 +202,7 @@ public class MainActivity extends Activity {
     }
 
     public void logout() {
+        derivationGen.incrementAndGet();
         if (gateway != null) {
             gateway.shutdown();
             gateway = null;
@@ -211,7 +212,7 @@ public class MainActivity extends Activity {
         e2eeKey = null;
         e2eeEnabled = false;
         TokenStore.clear(this);
-        
+
         channelCache.clear();
         guildCache.clear();
         guildInfoCache.clear();
@@ -223,7 +224,7 @@ public class MainActivity extends Activity {
         memberList.clear();
         diskCache.clearAll();
         diskCache.setAccount(null);
-        
+
         if (apiClient != null) apiClient.shutdown();
         apiClient = new ApiClient(handler);
         token = null;
@@ -232,6 +233,7 @@ public class MainActivity extends Activity {
     }
 
     public void navigate(Screen screen) {
+        if (fullscreenOverlay != null) hideFullscreen();
         if (!screenStack.isEmpty()) {
             Screen current = screenStack.peek();
             current.onPause();
@@ -299,6 +301,7 @@ public class MainActivity extends Activity {
     }
 
     public void resetTo(Screen screen) {
+        if (fullscreenOverlay != null) hideFullscreen();
         while (!screenStack.isEmpty()) {
             Screen s = screenStack.pop();
             try { s.onPause(); } catch (Exception ignored) {}
@@ -316,6 +319,21 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (firstResume) { firstResume = false; return; }
+        if (screenStack.isEmpty()) return;
+        try { screenStack.peek().onResume(); } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (screenStack.isEmpty()) return;
+        try { screenStack.peek().onPause(); } catch (Exception ignored) {}
+    }
+
+    @Override
     protected void onDestroy() {
         if (gateway != null) gateway.shutdown();
         if (apiClient != null) apiClient.shutdown();
@@ -324,28 +342,5 @@ public class MainActivity extends Activity {
 
     public void toast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-    }
-
-    private String cacheSummary() {
-        StringBuilder sb = new StringBuilder(64);
-        if (imageLoader != null) {
-            sb.append(" imgCache=").append(fmtBytes(imageLoader.cacheBytes())).append('/').append(fmtBytes(imageLoader.cacheMax()));
-        }
-        if (!screenStack.isEmpty() && screenStack.peek() instanceof MessageListScreen) {
-            MessageListScreen s = (MessageListScreen) screenStack.peek();
-            if (s.adapter != null) {
-                sb.append(" msgs=").append(s.messages.size())
-                  .append(" parsed=").append(s.adapter.parsedContentCache.size())
-                  .append(" emoji=").append(s.adapter.emojiCacheSize());
-            }
-        }
-        if (gateway != null) sb.append(" gw=").append(gatewayConnected ? "up" : "down");
-        return sb.toString();
-    }
-
-    private static String fmtBytes(long bytes) {
-        if (bytes < 1024) return bytes + "B";
-        if (bytes < 1024L * 1024L) return (bytes / 1024) + "K";
-        return String.format(java.util.Locale.US, "%.1fM", bytes / (1024.0 * 1024.0));
     }
 }

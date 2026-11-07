@@ -31,21 +31,21 @@ final class ChannelViewFactory {
     }
 
     View buildGuildIcon(Guild guild) {
-        FrameLayout wrap = new FrameLayout(activity);
+        if (guild == null) return sizedWrap();
         boolean hasIcon = Ui.isReal(guild.icon);
+        FrameLayout wrap = sizedWrap();
         wrap.setBackground(Ui.rounded(hasIcon ? Ui.BG_TERTIARY : Ui.avatarColor(guildId), dp(10)));
         wrap.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
         wrap.setClipToOutline(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(32), dp(32));
-        lp.setMarginEnd(dp(10));
-        wrap.setLayoutParams(lp);
 
         String name = guild.name == null ? "" : guild.name.trim();
-        TextView initial = Ui.text(activity, name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US), Color.WHITE, 14);
+        TextView initial = Ui.text(activity,
+            name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
+            Color.WHITE, 14);
         initial.setTypeface(null, Typeface.BOLD);
         initial.setGravity(Gravity.CENTER);
         wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
-        if (hasIcon) {
+        if (hasIcon && activity != null && activity.imageLoader != null) {
             ImageView icon = new ImageView(activity);
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
             activity.imageLoader.load("https://cdn.discordapp.com/icons/" + guild.id + "/" + guild.icon + ".png?size=64", icon);
@@ -54,18 +54,28 @@ final class ChannelViewFactory {
         return wrap;
     }
 
+    private FrameLayout sizedWrap() {
+        FrameLayout wrap = new FrameLayout(activity);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(32), dp(32));
+        lp.setMarginEnd(dp(10));
+        wrap.setLayoutParams(lp);
+        return wrap;
+    }
+
     View createCategory(final Channel category, List<Channel> kids) {
         LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.VERTICAL);
+        if (category == null || kids == null) return layout;
 
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(12), dp(16), dp(16), dp(4));
         header.setClickable(true);
+        header.setBackground(Ui.ripple(null, 0));
 
         final ImageView arrow = Ui.iconView(activity, Ui.I_CHEVRON_DOWN, Ui.MUTED, 16);
         header.addView(arrow);
-        TextView title = Ui.sectionLabel(activity, category.name);
+        TextView title = Ui.sectionLabel(activity, category.name == null ? "Category" : category.name);
         title.setPadding(dp(2), 0, 0, 0);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
@@ -73,9 +83,10 @@ final class ChannelViewFactory {
 
         final LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);
-        for (Channel ch : kids) box.addView(createChannelRow(ch));
+        for (Channel ch : kids) if (ch != null) box.addView(createChannelRow(ch));
 
-        final boolean collapsed = collapsedStore.isCollapsed(category.id);
+        final boolean canPersist = category.id != null;
+        final boolean collapsed = canPersist && collapsedStore != null && collapsedStore.isCollapsed(category.id);
         box.setVisibility(collapsed ? View.GONE : View.VISIBLE);
         arrow.setRotation(collapsed ? -90f : 0f);
 
@@ -83,7 +94,7 @@ final class ChannelViewFactory {
             boolean show = box.getVisibility() != View.VISIBLE;
             box.setVisibility(show ? View.VISIBLE : View.GONE);
             arrow.setRotation(show ? 0f : -90f);
-            collapsedStore.setCollapsed(category.id, !show);
+            if (canPersist && collapsedStore != null) collapsedStore.setCollapsed(category.id, !show);
         });
 
         layout.addView(header);
@@ -92,7 +103,7 @@ final class ChannelViewFactory {
     }
 
     View createChannelRow(final Channel ch) {
-        int unread = activity.mentions.unreadForChannel(ch.id);
+        int unread = activity != null ? activity.mentions.unreadForChannel(ch.id) : 0;
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), 0, dp(16), 0);

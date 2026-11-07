@@ -31,6 +31,12 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
     private CollapsedCategoryStore collapsedStore;
     private ChannelViewFactory viewFactory;
 
+    private final Runnable retryRunnable = () -> {
+        if (activity != null && channels == null) fetchChannels(false);
+    };
+
+    private final Runnable renderRunnable = this::render;
+
     public ChannelListScreen(Guild guild, boolean isOwner) {
         this.guild = guild;
         this.guildId = guild.id;
@@ -109,9 +115,7 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
                 if (activity == null || haveStale) return;
                 if (!retried) {
                     retried = true;
-                    host.handler.postDelayed(() -> {
-                        if (activity != null && channels == null) fetchChannels(false);
-                    }, 3000);
+                    host.handler.postDelayed(retryRunnable, 3000);
                     return;
                 }
                 error = msg;
@@ -123,7 +127,9 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
     private void setChannels(List<Channel> list) {
         channels = list;
         error = null;
-        for (Channel c : list) if (c.name != null) activity.channelNameCache.put(c.id, c.name);
+        if (activity != null) {
+            for (Channel c : list) if (c.name != null) activity.channelNameCache.put(c.id, c.name);
+        }
         render();
     }
 
@@ -161,7 +167,11 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
         }
     }
 
-    @Override public void onMentionsChanged() { render(); }
+    @Override public void onMentionsChanged() {
+        if (activity == null) return;
+        activity.handler.removeCallbacks(renderRunnable);
+        activity.handler.postDelayed(renderRunnable, 120);
+    }
 
     private int dp(int v) { return (int) (v * density); }
 
@@ -176,8 +186,13 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
     }
     @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
     @Override public void onDestroy() {
-        if (activity != null) activity.mentions.removeListener(this);
+        if (activity != null) {
+            activity.mentions.removeListener(this);
+            activity.handler.removeCallbacks(retryRunnable);
+            activity.handler.removeCallbacks(renderRunnable);
+        }
         activity = null;
+        view = null;
         listContainer = null;
         bar = null;
         collapsedStore = null;

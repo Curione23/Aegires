@@ -223,9 +223,9 @@ public class MessageListScreen implements Screen {
     }
 
     public void onGatewayReady() {
-        if (activity == null) return;
+        if (activity == null || feed == null) return;
         subscribe();
-        if (feed != null) feed.loadNewMessages();
+        feed.loadNewMessages();
     }
 
     private void subscribe() {
@@ -233,17 +233,20 @@ public class MessageListScreen implements Screen {
     }
 
     boolean atBottom() {
+        if (messageList == null) return true;
         RecyclerView.Adapter<?> a = messageList.getAdapter();
         if (a == null || a.getItemCount() == 0) return true;
         return layoutManager.findLastVisibleItemPosition() >= a.getItemCount() - 2;
     }
 
     void scrollToBottom() {
+        if (messageList == null) return;
         RecyclerView.Adapter<?> a = messageList.getAdapter();
         if (a == null || a.getItemCount() == 0) return;
         final int last = a.getItemCount() - 1;
         messageList.scrollToPosition(last);
         messageList.post(() -> {
+            if (messageList == null) return;
             RecyclerView.Adapter<?> aa = messageList.getAdapter();
             if (aa == null) return;
             int lastAfter = aa.getItemCount() - 1;
@@ -254,14 +257,15 @@ public class MessageListScreen implements Screen {
     }
 
     void scrollToMessage(String id) {
-        if (feed == null || messageList == null || loadingAdapter == null) return;
+        if (id == null || feed == null || messageList == null || loadingAdapter == null) return;
         int i = feed.indexOf(id);
         if (i >= 0) messageList.scrollToPosition(loadingAdapter.getItemCount() + i);
     }
 
     public void onGatewayEvent(String type, JSONObject d) {
         if (type == null || d == null || activity == null) return;
-        if (!channelId.equals(d.optString("channel_id", null))) return;
+        if (feed == null || adapter == null || typing == null) return;
+        if (channelId == null || !channelId.equals(d.optString("channel_id", null))) return;
         try {
             switch (type) {
                 case "MESSAGE_CREATE": gatewayCreate(Message.fromJson(d)); break;
@@ -279,10 +283,12 @@ public class MessageListScreen implements Screen {
     }
 
     private void gatewayCreate(Message m) {
+        if (messageList == null || adapter == null) return;
         boolean stick = atBottom();
         if (m != null && m.author != null && m.author.id != null) typing.removeUser(m.author.id);
         if (feed.merge(java.util.Collections.singletonList(m), false)) {
             messageList.post(() -> {
+                if (messageList == null || adapter == null) return;
                 adapter.submitList(new ArrayList<>(messages));
                 if (stick) scrollToBottom();
             });
@@ -290,17 +296,22 @@ public class MessageListScreen implements Screen {
     }
 
     private void gatewayUpdate(Message incoming) {
-        if (incoming == null) return;
+        if (incoming == null || messageList == null || adapter == null) return;
         MessageCryptoHelper.decryptMessageInPlace(this, incoming);
         int i = incoming.id == null ? -1 : feed.indexOf(incoming.id);
         if (i < 0) return;
         messages.get(i).mergeFrom(incoming);
-        messageList.post(() -> adapter.invalidateMessage(incoming.id));
+        messageList.post(() -> {
+            if (adapter == null) return;
+            adapter.invalidateMessage(incoming.id);
+        });
     }
 
     void gatewayDelete(String id) {
-        if (id == null || !feed.removeMessage(id)) return;
+        if (id == null || messageList == null || adapter == null || feed == null) return;
+        if (!feed.removeMessage(id)) return;
         messageList.post(() -> {
+            if (adapter == null) return;
             adapter.parsedContentCache.remove(id);
             adapter.submitList(new ArrayList<>(messages));
         });
@@ -379,7 +390,7 @@ public class MessageListScreen implements Screen {
                 sending = false;
                 if (activity == null) return;
                 activity.toast(failPrefix + err);
-                if (composer.text().length() == 0) {
+                if (composer != null && composer.text().length() == 0) {
                     composer.restoreText(text);
                 }
             }
@@ -400,15 +411,18 @@ public class MessageListScreen implements Screen {
         if (typing != null) typing.release();
         if (composer != null) composer.release();
         activity = null;
-        if (adapter != null) {
-            adapter.activity = null;
-            adapter.emojiExecutor.shutdownNow();
-        }
+        if (adapter != null) adapter.activity = null;
         composer = null;
         feed = null;
         typing = null;
         actions = null;
         picker = null;
+        loadingAdapter = null;
+        layoutManager = null;
+        messageList = null;
+        channelNameTv = null;
+        forcedKey = null;
+        view = null;
     }
 
     public String getChannelId() { return channelId; }

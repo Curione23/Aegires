@@ -52,15 +52,17 @@ final class ProfileDetailsView {
         }
         if (guildId != null && joinedMs > 0) {
             String name = guildName(guildId);
+            String trimmed = name.trim();
             detailsSection.addView(sinceRow(Ui.avatarColor(guildId),
-                name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
+                trimmed.isEmpty() ? "?" : trimmed.substring(0, trimmed.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
                 formatDate(joinedMs), name));
         }
         if (user.mutualGuildsCount > 0) {
             detailsSection.addView(infoRow("Mutual servers", String.valueOf(user.mutualGuildsCount), dp(14)));
         }
         if (user.premiumType > 0) {
-            detailsSection.addView(infoRow("Subscription", user.premiumType == 2 ? "Nitro" : "Nitro Classic", user.mutualGuildsCount > 0 ? 0 : dp(14)));
+            String tier = user.premiumType == 2 ? "Nitro" : user.premiumType == 3 ? "Nitro Basic" : "Nitro Classic";
+            detailsSection.addView(infoRow("Subscription", tier, user.mutualGuildsCount > 0 ? 0 : dp(14)));
         }
         detailsSection.setVisibility(View.VISIBLE);
     }
@@ -87,7 +89,12 @@ final class ProfileDetailsView {
 
     private String guildName(String guildId) {
         List<Guild> gs = activity.guildCache.get("me");
-        if (gs != null) for (Guild g : gs) if (g.id.equals(guildId)) return g.name == null ? "" : g.name;
+        if (gs != null) {
+            for (Guild g : gs) {
+                if (g == null || g.id == null) continue;
+                if (g.id.equals(guildId)) return g.name == null ? "" : g.name;
+            }
+        }
         return "Server";
     }
 

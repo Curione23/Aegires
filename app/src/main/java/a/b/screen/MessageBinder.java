@@ -11,6 +11,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import a.b.model.Message;
 import a.b.model.Role;
+import a.b.util.Crypto;
 import a.b.util.TimeUtils;
 import a.b.util.Ui;
 
@@ -48,10 +49,10 @@ final class MessageBinder {
         h.avatar.setBackground(Ui.oval(Ui.avatarColor(uid)));
         h.avatar.setClipToOutline(true);
         boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null
-            && msg.author != null && isReal(msg.author.avatar);
+            && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
         if (adapter.imageLoader != null) {
             adapter.imageLoader.load(hasAvatar
-                ? MessageAdapter.CDN + "avatars/" + uid + "/" + msg.author.avatar + ".png?size=128" : null, h.avatar);
+                ? MessageAdapter.CDN + "avatars/" + msg.author.id + "/" + msg.author.avatar + ".png?size=128" : null, h.avatar);
         }
         View.OnClickListener open = v -> openProfile(uid);
         h.avatar.setOnClickListener(open);
@@ -74,6 +75,7 @@ final class MessageBinder {
         if (roles == null || roles.isEmpty() || adapter.activity.roleCache == null) return Color.WHITE;
         Role highest = null;
         for (String roleId : roles) {
+            if (roleId == null) continue;
             Role r = adapter.activity.roleCache.get(roleId);
             if (r != null && (highest == null || r.position > highest.position)) highest = r;
         }
@@ -92,7 +94,9 @@ final class MessageBinder {
         String name = isReal(message.memberNick) ? message.memberNick :
                       isReal(nick) ? nick :
                       message.author == null ? "System" :
-                      isReal(message.author.globalName) ? message.author.globalName : message.author.username;
+                      isReal(message.author.globalName) ? message.author.globalName :
+                      isReal(message.author.username) ? message.author.username :
+                      "Unknown";
         if (adapter.activity != null && message.author != null && message.author.id != null && adapter.activity.userNameCache != null) {
             String global = isReal(message.author.globalName) ? message.author.globalName : message.author.username;
             if (isReal(global)) adapter.activity.userNameCache.put(message.author.id, global);
@@ -101,6 +105,7 @@ final class MessageBinder {
     }
 
     CharSequence replyPreview(Message m) {
+        if (m == null) return "";
         SpannableStringBuilder sb = new SpannableStringBuilder("\u21B3 ");
         String authorName = m.replyToAuthorName;
         if (adapter.activity != null && m.replyToAuthorId != null) {
@@ -116,6 +121,8 @@ final class MessageBinder {
         sb.append("  ");
         if (m.replyToMissing) {
             sb.append("Original message was deleted");
+        } else if (m.replyToContent != null && Crypto.looksEncrypted(m.replyToContent)) {
+            sb.append("\uD83D\uDD12 [encrypted]");
         } else {
             String t = m.replyToContent == null ? "" : m.replyToContent.replace('\n', ' ');
             if (t.length() > 80) t = t.substring(0, 80) + "\u2026";

@@ -30,7 +30,7 @@ final class ProfileHeaderView {
         this.activity = activity;
         this.header = buildHeader(userId);
         this.nameBlock = buildNameBlock();
-        String cached = activity.userNameCache.get(userId);
+        String cached = (activity != null && userId != null) ? activity.userNameCache.get(userId) : null;
         if (Ui.isReal(cached)) nameTv.setText(cached);
     }
 
@@ -38,23 +38,25 @@ final class ProfileHeaderView {
     View getNameBlock() { return nameBlock; }
 
     void renderUser(DiscordUser user) {
-        if (user == null) return;
+        if (user == null || activity == null) return;
         botTag.setVisibility(user.bot ? View.VISIBLE : View.GONE);
         String base = Ui.isReal(user.globalName) ? user.globalName : user.username;
-        avatarInitial.setText(base == null || base.isEmpty() ? "?"
-            : base.substring(0, base.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
-        if (Ui.isReal(user.banner)) {
+        if (base == null) base = "";
+        String trimmed = base.trim();
+        avatarInitial.setText(trimmed.isEmpty() ? "?"
+            : trimmed.substring(0, trimmed.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
+        if (Ui.isReal(user.banner) && user.id != null) {
             activity.imageLoader.load("https://cdn.discordapp.com/banners/" + user.id + "/" + user.banner + ".png?size=600", bannerIv);
         } else if (user.accentColor != 0) {
             bannerIv.setBackgroundColor(user.accentColor | 0xFF000000);
         }
-        if (Ui.isReal(user.avatar)) {
+        if (Ui.isReal(user.avatar) && user.id != null) {
             activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + user.id + "/" + user.avatar + ".png?size=256", avatarIv);
         }
     }
 
     void applyName(DiscordUser user, String nick) {
-        if (user == null) return;
+        if (user == null || activity == null) return;
         String global = Ui.isReal(user.globalName) ? user.globalName : user.username;
         nameTv.setText(Ui.isReal(nick) ? nick : global);
         StringBuilder line = new StringBuilder(user.username == null ? "" : user.username);

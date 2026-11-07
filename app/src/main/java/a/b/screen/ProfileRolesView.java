@@ -37,10 +37,18 @@ final class ProfileRolesView {
     void render(List<String> roleIds, Map<String, Role> allRoles) {
         if (activity == null) return;
         rolesRow.removeAllViews();
+        if (roleIds == null || allRoles == null) {
+            rolesSection.setVisibility(View.GONE);
+            return;
+        }
         List<Role> memberRoles = new ArrayList<>();
         for (String id : roleIds) {
+            if (id == null) continue;
             Role r = allRoles.get(id);
-            if (r != null && !"@everyone".equals(r.name)) memberRoles.add(r);
+            if (r == null) continue;
+            if ("@everyone".equals(r.name)) continue;
+            if (r.name == null || r.name.trim().isEmpty()) continue;
+            memberRoles.add(r);
         }
         Collections.sort(memberRoles, (a, b) -> Integer.compare(b.position, a.position));
 

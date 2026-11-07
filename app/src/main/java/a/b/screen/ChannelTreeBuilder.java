@@ -36,18 +36,20 @@ final class ChannelTreeBuilder {
     };
 
     static Result build(List<Channel> all) {
+        if (all == null || all.isEmpty()) {
+            return new Result(new ArrayList<Channel>(), new ArrayList<CategoryGroup>());
+        }
         List<Channel> categories = new ArrayList<>();
         List<Channel> uncategorized = new ArrayList<>();
         Map<String, List<Channel>> children = new HashMap<>();
 
         for (Channel ch : all) {
-            if (ch.type == 4) {
-                categories.add(ch);
-                if (!children.containsKey(ch.id)) children.put(ch.id, new ArrayList<Channel>());
-            }
+            if (ch == null || ch.type != 4 || ch.id == null) continue;
+            categories.add(ch);
+            children.putIfAbsent(ch.id, new ArrayList<Channel>());
         }
         for (Channel ch : all) {
-            if (ch.type == 4) continue;
+            if (ch == null || ch.type == 4) continue;
             String parent = ch.parent_id;
             boolean hasParent = parent != null && parent.length() > 0 && !"null".equals(parent) && children.containsKey(parent);
             if (!hasParent) uncategorized.add(ch);

@@ -5,6 +5,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 import java.util.List;
 import org.json.JSONObject;
 import a.b.MainActivity;
@@ -19,8 +20,11 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
     View view;
     LinearLayout list;
     private boolean destroyed, loading;
+    private String error;
     private MentionChannelFetcher channelFetcher;
     private MentionRowView rowView;
+
+    private final Runnable renderRunnable = this::render;
 
     @Override
     public View onCreateView(final MainActivity activity, ViewGroup parent) {
@@ -52,41 +56,64 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
     }
 
     private void fetch() {
-        if (activity == null || loading) return;
+        if (activity == null || destroyed || loading) return;
         if (activity.apiClient.isBotAccount()) { render(); return; }
         loading = true;
+        error = null;
         render();
         activity.apiClient.fetchMentions(new ApiClient.Callback<List<MentionItem>>() {
             @Override public void onSuccess(List<MentionItem> result) {
                 loading = false;
                 if (destroyed || activity == null) return;
-                activity.mentions.mergeRemote(result);
+                if (result != null) activity.mentions.mergeRemote(result);
                 render();
             }
             @Override public void onError(String msg) {
                 loading = false;
                 if (destroyed) return;
+                error = msg;
                 render();
             }
         });
     }
 
     private void render() {
-        if (list == null || activity == null) return;
+        if (destroyed || list == null || activity == null || rowView == null) return;
         list.removeAllViews();
         List<MentionItem> items = activity.mentions.items();
         if (items.isEmpty()) {
-            String msg = loading ? "Loading\u2026"
-                : activity.apiClient.isBotAccount() ? "Mentions are only available for user accounts.\nLive mentions will still show up here."
-                : "No recent mentions.\nYou'll see @mentions and @everyone pings here.";
-            list.addView(Ui.emptyState(activity, msg));
+            String msg;
+            boolean retry = false;
+            if (loading) {
+                msg = "Loading\u2026";
+            } else if (error != null) {
+                msg = "Couldn't load mentions.\nTap to retry.";
+                retry = true;
+            } else if (activity.apiClient.isBotAccount()) {
+                msg = "Mentions are only available for user accounts.\nLive mentions will still show up here.";
+            } else {
+                msg = "No recent mentions.\nYou'll see @mentions and @everyone pings here.";
+            }
+            TextView empty = Ui.emptyState(activity, msg);
+            if (retry) {
+                empty.setOnClickListener(v -> {
+                    if (destroyed || activity == null) return;
+                    error = null;
+                    render();
+                    fetch();
+                });
+            }
+            list.addView(empty);
             return;
         }
-        for (MentionItem m : items) list.addView(rowView.build(m));
+        for (MentionItem m : items) {
+            if (m == null) continue;
+            list.addView(rowView.build(m));
+        }
     }
 
     private void open(final MentionItem m) {
-        if (activity == null) return;
+        if (activity == null || m == null) return;
         activity.mentions.markRead(m);
         if (m.guildResolved) {
             activity.navigate(new MessageListScreen(m.guildId, m.channelId));
@@ -106,7 +133,11 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
         });
     }
 
-    @Override public void onMentionsChanged() { render(); }
+    @Override public void onMentionsChanged() {
+        if (activity == null || destroyed) return;
+        activity.handler.removeCallbacks(renderRunnable);
+        activity.handler.postDelayed(renderRunnable, 120);
+    }
 
     @Override public View getView() { return view; }
     @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
@@ -114,8 +145,13 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
     @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
     @Override public void onDestroy() {
         destroyed = true;
-        if (activity != null) activity.mentions.removeListener(this);
+        if (activity != null) {
+            activity.mentions.removeListener(this);
+            activity.handler.removeCallbacks(renderRunnable);
+        }
         activity = null;
+        list = null;
+        view = null;
         channelFetcher = null;
         rowView = null;
     }

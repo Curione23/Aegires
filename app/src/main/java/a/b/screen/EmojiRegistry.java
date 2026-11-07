@@ -48,7 +48,15 @@ final class EmojiRegistry {
             @Override public void onBitmap(Bitmap bmp, int srcW, int srcH) {
                 loading.remove(id);
                 if (adapter.activity == null) return;
-                cache.put(id, Bitmap.createScaledBitmap(bmp, adapter.jumboSize, adapter.jumboSize, true));
+                Bitmap scaled = bmp;
+                if (bmp.getWidth() != adapter.jumboSize || bmp.getHeight() != adapter.jumboSize) {
+                    try {
+                        scaled = Bitmap.createScaledBitmap(bmp, adapter.jumboSize, adapter.jumboSize, true);
+                    } catch (OutOfMemoryError | IllegalArgumentException ignored) {
+                        scaled = bmp;
+                    }
+                }
+                cache.put(id, scaled);
                 Set<String> affected = messageMap.remove(id);
                 if (affected == null) return;
                 List<String> ids;
@@ -57,8 +65,14 @@ final class EmojiRegistry {
                 }
                 if (!ids.isEmpty()) adapter.invalidateEmojis(ids);
             }
-            @Override public void onFailure(MediaCache.Failure f) { loading.remove(id); }
-            @Override public void onNeedsConfirm(long bytes) { loading.remove(id); }
+            @Override public void onFailure(MediaCache.Failure f) {
+                loading.remove(id);
+                messageMap.remove(id);
+            }
+            @Override public void onNeedsConfirm(long bytes) {
+                loading.remove(id);
+                messageMap.remove(id);
+            }
         });
     }
 }

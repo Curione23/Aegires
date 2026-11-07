@@ -72,23 +72,28 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
     }
 
     @Override public void onMemberListChanged() {
+        if (activity == null) return;
         ui.removeCallbacks(refresh);
         ui.postDelayed(refresh, 120);
     }
 
     private void refreshNow() {
         if (activity == null) return;
+        if (emptyView == null || bar == null) return;
         MemberListStore store = activity.memberList;
         boolean mine = guildId.equals(store.guildId());
         int total = mine ? store.total() : 0;
-        if (!activity.apiClient.isBotAccount()) {
+        boolean bot = activity.apiClient != null && activity.apiClient.isBotAccount();
+        if (!bot) {
             emptyView.setText("Loading members\u2026");
         }
         emptyView.setVisibility(total == 0 ? View.VISIBLE : View.GONE);
         if (mine && store.memberCount() > 0) {
             bar.setSubtitle(store.memberCount() + " members \u00B7 " + store.onlineCount() + " online");
+        } else {
+            bar.setSubtitle(null);
         }
-        adapter.notifyDataSetChanged();
+        if (adapter != null) adapter.notifyDataSetChanged();
         if (mine && rangeLoader != null) rangeLoader.ensureLoaded();
     }
 
@@ -109,8 +114,13 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         ui.removeCallbacksAndMessages(null);
         if (activity != null) activity.memberList.removeListener(this);
         if (adapter != null) adapter.release();
+        if (rangeLoader != null) rangeLoader.release();
         activity = null;
         adapter = null;
         rangeLoader = null;
+        emptyView = null;
+        bar = null;
+        list = null;
+        view = null;
     }
 }

@@ -3,6 +3,7 @@ package a.b.screen;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.crypto.SecretKey;
+import a.b.MainActivity;
 import a.b.model.Message;
 import a.b.util.Crypto;
 
@@ -13,31 +14,38 @@ final class MessageCryptoHelper {
     private MessageCryptoHelper() {}
 
     static String prepareOutgoingText(MessageListScreen host, String plain) {
+        if (host == null || plain == null) return null;
         if (!host.encOn()) return plain;
         SecretKey key = host.key();
+        MainActivity activity = host.activity;
         if (key == null) {
-            host.activity.toast(host.forced ? "Encryption key not ready yet" : "Encryption key missing");
+            if (activity != null) activity.toast(host.forced ? "Encryption key not ready yet" : "Encryption key missing");
             return null;
         }
-        String sender = host.activity.selfId();
+        if (host.channelId == null) {
+            if (activity != null) activity.toast("Can't encrypt: unknown channel");
+            return null;
+        }
+        String sender = activity != null ? activity.selfId() : null;
         if (sender == null) {
-            host.activity.toast("Not ready yet, try again in a moment");
+            if (activity != null) activity.toast("Not ready yet, try again in a moment");
             return null;
         }
         Crypto.Preset p = host.preset();
         int max = Crypto.maxPlaintextBytes(p);
         if (Crypto.utf8Length(plain) > max) {
-            host.activity.toast("Too long for " + p.label + " (max " + max + " bytes)");
+            if (activity != null) activity.toast("Too long for " + p.label + " (max " + max + " bytes)");
             return null;
         }
         String out = Crypto.encrypt(plain, key, p, host.channelId, sender);
-        if (out == null) host.activity.toast("Encryption failed");
+        if (out == null && activity != null) activity.toast("Encryption failed");
         return out;
     }
 
     static void decryptMessageInPlace(MessageListScreen host, Message m) {
-        if (m == null || host.key() == null) return;
+        if (host == null || m == null) return;
         SecretKey key = host.key();
+        if (key == null) return;
         String channelId = host.channelId;
         if (Crypto.looksEncrypted(m.content)) {
             String plain = Crypto.decrypt(m.content, key, channelId, m.author != null ? m.author.id : null);

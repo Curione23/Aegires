@@ -1,5 +1,6 @@
 package a.b.screen;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import a.b.model.Embed;
 import a.b.model.Message;
+import a.b.util.Crypto;
 import a.b.util.ImageLoader;
 import a.b.util.Ui;
 
@@ -33,8 +35,8 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
     final TextView name, time, reply, content;
     Message msg;
 
-    MessageViewHolder(MessageAdapter adapter) {
-        super(new LinearLayout(adapter.activity));
+    MessageViewHolder(MessageAdapter adapter, Context context) {
+        super(new LinearLayout(context));
         this.adapter = adapter;
         root = (LinearLayout) itemView;
         root.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
@@ -43,30 +45,30 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         root.setPadding(adapter.dp(12), adapter.dp(10), adapter.dp(12), 0);
         root.setOnLongClickListener(this);
 
-        avatar = new ImageView(adapter.activity);
+        avatar = new ImageView(context);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         avatar.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
         avatar.setClipToOutline(true);
         root.addView(avatar, lp(adapter.avatarSize, adapter.avatarSize, 0, adapter.dp(2), adapter.dp(12), 0));
 
-        body = new LinearLayout(adapter.activity);
+        body = new LinearLayout(context);
         body.setOrientation(VERTICAL);
 
-        header = new LinearLayout(adapter.activity);
+        header = new LinearLayout(context);
         header.setOrientation(HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
 
-        name = new TextView(adapter.activity);
+        name = new TextView(context);
         name.setTextColor(Color.WHITE);
         name.setTypeface(null, Typeface.BOLD);
         name.setTextSize(16);
         name.setSingleLine();
         name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setMaxWidth((int) (adapter.activity.getResources().getDisplayMetrics().widthPixels * 0.6f));
+        name.setMaxWidth((int) (context.getResources().getDisplayMetrics().widthPixels * 0.6f));
         LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(WRAP, WRAP);
         nameLp.setMarginEnd(adapter.dp(8));
 
-        time = new TextView(adapter.activity);
+        time = new TextView(context);
         time.setTextColor(MUTED);
         time.setTextSize(12);
         time.setSingleLine();
@@ -74,7 +76,7 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         header.addView(name, nameLp);
         header.addView(time);
 
-        reply = new TextView(adapter.activity);
+        reply = new TextView(context);
         reply.setTextColor(MUTED);
         reply.setTextSize(12);
         reply.setSingleLine();
@@ -82,7 +84,7 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         reply.setPadding(0, 0, 0, adapter.dp(2));
         reply.setVisibility(View.GONE);
 
-        content = new TextView(adapter.activity);
+        content = new TextView(context);
         content.setTextColor(TEXT);
         content.setTextSize(16);
         content.setLinkTextColor(LINK_FG);
@@ -90,9 +92,9 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         content.setLineSpacing(0, 1.12f);
         content.setOnLongClickListener(this);
 
-        attachments = new LinearLayout(adapter.activity);
+        attachments = new LinearLayout(context);
         attachments.setOrientation(VERTICAL);
-        embeds = new LinearLayout(adapter.activity);
+        embeds = new LinearLayout(context);
         embeds.setOrientation(VERTICAL);
 
         body.addView(header);
@@ -104,22 +106,23 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
     }
 
     void bind(Message msg, int pos) {
+        if (adapter.activity == null || msg == null) return;
         boolean showHeader = pos == 0 || !MessageAdapter.sameGroup(adapter.displayList.get(pos - 1), msg);
         adapter.bindHeader(this, msg, showHeader);
         root.setBackgroundColor(adapter.mentionsSelf(msg) ? 0xFF3A3A33 : BG);
-        CharSequence text;
 
-        if (msg.encrypted && (adapter.activity == null || adapter.key() == null)) {
+        CharSequence text;
+        if (msg.encrypted && adapter.key() == null) {
             text = "\uD83D\uDD12 Encrypted message (key missing)";
+        } else if (msg.encrypted && msg.content != null && Crypto.looksEncrypted(msg.content)) {
+            text = "\uD83D\uDD12 Encrypted message (can't decrypt)";
+        } else if (msg.id == null) {
+            text = adapter.render(msg.content, msg);
         } else {
-            if (msg.id == null) {
+            text = adapter.parsedContentCache.get(msg.id);
+            if (text == null) {
                 text = adapter.render(msg.content, msg);
-            } else {
-                text = adapter.parsedContentCache.get(msg.id);
-                if (text == null) {
-                    text = adapter.render(msg.content, msg);
-                    adapter.parsedContentCache.put(msg.id, text);
-                }
+                adapter.parsedContentCache.put(msg.id, text);
             }
         }
         content.setText(text);
@@ -127,7 +130,13 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
 
         boolean isReply = msg.replyToMessageId != null;
         reply.setVisibility(isReply ? View.VISIBLE : View.GONE);
-        if (isReply) reply.setText(adapter.replyPreview(msg));
+        if (isReply) {
+            if (msg.replyToContent != null && Crypto.looksEncrypted(msg.replyToContent)) {
+                reply.setText("\u21B3 \uD83D\uDD12 [encrypted reply]");
+            } else {
+                reply.setText(adapter.replyPreview(msg));
+            }
+        }
 
         List<View> oldMedia = new ArrayList<>();
         for (int i = 0; i < attachments.getChildCount(); i++) oldMedia.add(attachments.getChildAt(i));
