@@ -9,7 +9,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.Locale;
 import a.b.MainActivity;
 import a.b.model.DiscordUser;
 import a.b.util.Ui;
@@ -23,8 +22,8 @@ final class ProfileHeaderView {
     private final MainActivity activity;
     private final FrameLayout header;
     private final LinearLayout nameBlock;
-    private ImageView bannerIv, avatarIv;
-    private TextView avatarInitial, nameTv, userLineTv, botTag;
+    private ImageView bannerIv, avatarIv, avatarIcon;
+    private TextView nameTv, userLineTv, botTag;
 
     ProfileHeaderView(MainActivity activity, String userId) {
         this.activity = activity;
@@ -40,13 +39,10 @@ final class ProfileHeaderView {
     void renderUser(DiscordUser user) {
         if (user == null || activity == null) return;
         botTag.setVisibility(user.bot ? View.VISIBLE : View.GONE);
-    
+        
         boolean hasAvatar = Ui.isReal(user.avatar) && user.id != null;
-    
-        avatarInitial.setText("\uD83D\uDC64");
-        avatarInitial.setTextSize(44); 
-    
-        avatarInitial.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
+        
+        avatarIcon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         avatarIv.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
 
         if (Ui.isReal(user.banner) && user.id != null) {
@@ -54,7 +50,7 @@ final class ProfileHeaderView {
         } else if (user.accentColor != 0) {
             bannerIv.setBackgroundColor(user.accentColor | 0xFF000000);
         }
-    
+        
         if (hasAvatar) {
             activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + user.id + "/" + user.avatar + ".png?size=256", avatarIv);
         } else {
@@ -91,10 +87,11 @@ final class ProfileHeaderView {
         FrameLayout inner = new FrameLayout(activity);
         inner.setBackground(Ui.oval(Ui.avatarColor(userId)));
         inner.setClipToOutline(true);
-        avatarInitial = Ui.text(activity, "", Color.WHITE, 30);
-        avatarInitial.setTypeface(null, Typeface.BOLD);
-        avatarInitial.setGravity(Gravity.CENTER);
-        inner.addView(avatarInitial, new FrameLayout.LayoutParams(-1, -1));
+        
+        avatarIcon = Ui.iconView(activity, Ui.I_USER, Color.WHITE, 48);
+        avatarIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        inner.addView(avatarIcon, new FrameLayout.LayoutParams(-1, -1));
+        
         avatarIv = new ImageView(activity);
         avatarIv.setScaleType(ImageView.ScaleType.CENTER_CROP);
         inner.addView(avatarIv, new FrameLayout.LayoutParams(-1, -1));

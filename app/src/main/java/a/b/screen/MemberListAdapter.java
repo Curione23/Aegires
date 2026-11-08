@@ -94,7 +94,8 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     final class MemberHolder extends RecyclerView.ViewHolder {
         final FrameLayout avatarWrap;
         final ImageView avatar;
-        final TextView icon, name, botTag;
+        final ImageView icon;
+        final TextView name, botTag;
         final View dot;
 
         MemberHolder(Context c) {
@@ -114,8 +115,8 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             avatarWrap = new FrameLayout(c);
             avatarWrap.setClipToOutline(true);
             
-            icon = Ui.text(c, "\uD83D\uDC64", Color.WHITE, 20);
-            icon.setGravity(Gravity.CENTER);
+            icon = Ui.iconView(c, Ui.I_USER, Color.WHITE, 24);
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             avatarWrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
             
             avatar = new ImageView(c);

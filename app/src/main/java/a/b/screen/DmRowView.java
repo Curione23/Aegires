@@ -9,7 +9,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.Locale;
 import a.b.MainActivity;
 import a.b.model.DmChannel;
 import a.b.util.Ui;
@@ -87,11 +86,11 @@ final class DmRowView {
         wrap.setBackground(Ui.oval(r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0]));
         wrap.setClipToOutline(true);
 
-        TextView icon = Ui.text(activity, "\uD83D\uDC64", Color.WHITE, 22);
-        icon.setGravity(Gravity.CENTER);
-    
+        ImageView icon = Ui.iconView(activity, Ui.I_USER, Color.WHITE, 24);
+        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        
         boolean hasAvatar = r != null && r.hasAvatar() && r.id != null;
-    
+        
         icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
 
