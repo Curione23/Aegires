@@ -40,18 +40,25 @@ final class ProfileHeaderView {
     void renderUser(DiscordUser user) {
         if (user == null || activity == null) return;
         botTag.setVisibility(user.bot ? View.VISIBLE : View.GONE);
-        String base = Ui.isReal(user.globalName) ? user.globalName : user.username;
-        if (base == null) base = "";
-        String trimmed = base.trim();
-        avatarInitial.setText(trimmed.isEmpty() ? "?"
-            : trimmed.substring(0, trimmed.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
+    
+        boolean hasAvatar = Ui.isReal(user.avatar) && user.id != null;
+    
+        avatarInitial.setText("\uD83D\uDC64");
+        avatarInitial.setTextSize(44); 
+    
+        avatarInitial.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
+        avatarIv.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
+
         if (Ui.isReal(user.banner) && user.id != null) {
             activity.imageLoader.load("https://cdn.discordapp.com/banners/" + user.id + "/" + user.banner + ".png?size=600", bannerIv);
         } else if (user.accentColor != 0) {
             bannerIv.setBackgroundColor(user.accentColor | 0xFF000000);
         }
-        if (Ui.isReal(user.avatar) && user.id != null) {
+    
+        if (hasAvatar) {
             activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + user.id + "/" + user.avatar + ".png?size=256", avatarIv);
+        } else {
+            avatarIv.setImageDrawable(null);
         }
     }
 

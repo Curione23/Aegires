@@ -12,7 +12,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.recyclerview.widget.RecyclerView;
-import java.util.Locale;
 import a.b.MainActivity;
 import a.b.util.MemberListStore.Entry;
 import a.b.util.Ui;
@@ -40,18 +39,18 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         return activity.memberList.total();
     }
 
-    @Override public int getItemViewType(int pos) {
-        Entry e = entryAt(pos);
-        if (e == null) return TYPE_PLACEHOLDER;
-        return e.group ? TYPE_GROUP : TYPE_MEMBER;
-    }
-    
     @Override public long getItemId(int position) {
         Entry e = entryAt(position);
         if (e == null) return -position;
         if (e.group) return e.groupId != null ? e.groupId.hashCode() : -position;
         if (e.userId != null) return e.userId.hashCode();
         return -position;
+    }
+
+    @Override public int getItemViewType(int pos) {
+        Entry e = entryAt(pos);
+        if (e == null) return TYPE_PLACEHOLDER;
+        return e.group ? TYPE_GROUP : TYPE_MEMBER;
     }
 
     @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
@@ -95,7 +94,7 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     final class MemberHolder extends RecyclerView.ViewHolder {
         final FrameLayout avatarWrap;
         final ImageView avatar;
-        final TextView initial, name, botTag;
+        final TextView icon, name, botTag;
         final View dot;
 
         MemberHolder(Context c) {
@@ -114,10 +113,11 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
 
             avatarWrap = new FrameLayout(c);
             avatarWrap.setClipToOutline(true);
-            initial = Ui.text(c, "", Color.WHITE, 16);
-            initial.setTypeface(null, Typeface.BOLD);
-            initial.setGravity(Gravity.CENTER);
-            avatarWrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
+            
+            icon = Ui.text(c, "\uD83D\uDC64", Color.WHITE, 20);
+            icon.setGravity(Gravity.CENTER);
+            avatarWrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
+            
             avatar = new ImageView(c);
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
             avatarWrap.addView(avatar, new FrameLayout.LayoutParams(-1, -1));
@@ -155,11 +155,16 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             dot.setBackground(Ui.oval(MemberPresentation.statusColor(e.status)));
 
             avatarWrap.setBackground(Ui.oval(Ui.avatarColor(e.userId)));
-            initial.setText(display.isEmpty() ? "?"
-                : display.substring(0, display.offsetByCodePoints(0, 1)).toUpperCase(Locale.US));
-            boolean has = Ui.isReal(e.avatar) && e.userId != null;
-            activity.imageLoader.load(has
-                ? "https://cdn.discordapp.com/avatars/" + e.userId + "/" + e.avatar + ".png?size=64" : null, avatar);
+            boolean hasAvatar = Ui.isReal(e.avatar) && e.userId != null;
+
+            icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
+            avatar.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
+
+            if (hasAvatar) {
+                activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + e.userId + "/" + e.avatar + ".png?size=64", avatar);
+            } else {
+                avatar.setImageDrawable(null); 
+            }
 
             itemView.setOnClickListener(v -> {
                 if (activity != null && e.userId != null) activity.navigate(new ProfileScreen(e.userId, guildId));

@@ -57,8 +57,11 @@ final class MentionRowView {
         LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         avLp.setMarginEnd(dp(12));
         boolean hasAvatar = Ui.isReal(m.authorAvatar) && m.authorId != null;
-        activity.imageLoader.load(hasAvatar ? "https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128" : null, avatar);
-        row.addView(avatar, avLp);
+        if (hasAvatar) {
+            activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128", avatar);
+        } else {
+            avatar.setImageDrawable(null); // Clear recycled image
+        }
 
         LinearLayout col = new LinearLayout(activity);
         col.setOrientation(LinearLayout.VERTICAL);

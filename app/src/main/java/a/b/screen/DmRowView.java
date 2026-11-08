@@ -87,24 +87,21 @@ final class DmRowView {
         wrap.setBackground(Ui.oval(r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0]));
         wrap.setClipToOutline(true);
 
-        TextView initial = Ui.text(activity, initialOf(r), Color.WHITE, 18);
-        initial.setTypeface(null, Typeface.BOLD);
-        initial.setGravity(Gravity.CENTER);
-        wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
+        TextView icon = Ui.text(activity, "\uD83D\uDC64", Color.WHITE, 22);
+        icon.setGravity(Gravity.CENTER);
+    
+        boolean hasAvatar = r != null && r.hasAvatar() && r.id != null;
+    
+        icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
+        wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
 
-        if (r != null && r.hasAvatar() && r.id != null) {
+        if (hasAvatar) {
             ImageView iv = new ImageView(activity);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             activity.imageLoader.load(AVATAR_URL + r.id + "/" + r.avatar + ".png?size=128", iv);
             wrap.addView(iv, new FrameLayout.LayoutParams(-1, -1));
         }
         return wrap;
-    }
-
-    private static String initialOf(DmChannel.Recipient r) {
-        if (r == null) return "?";
-        String s = r.display();
-        return (s == null || s.isEmpty()) ? "?" : s.substring(0, s.offsetByCodePoints(0, 1)).toUpperCase(Locale.US);
     }
 
     private int dp(int v) { return Ui.dp(activity, v); }

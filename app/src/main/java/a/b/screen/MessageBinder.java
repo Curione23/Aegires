@@ -50,10 +50,15 @@ final class MessageBinder {
         h.avatar.setClipToOutline(true);
         boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null
             && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
+            
         if (adapter.imageLoader != null) {
-            adapter.imageLoader.load(hasAvatar
-                ? MessageAdapter.CDN + "avatars/" + msg.author.id + "/" + msg.author.avatar + ".png?size=128" : null, h.avatar);
+            if (hasAvatar) {
+                adapter.imageLoader.load(MessageAdapter.CDN + "avatars/" + msg.author.id + "/" + msg.author.avatar + ".png?size=128", h.avatar);
+            } else {
+                h.avatar.setImageDrawable(null); 
+            }
         }
+        
         View.OnClickListener open = v -> openProfile(uid);
         h.avatar.setOnClickListener(open);
         h.name.setOnClickListener(open);
