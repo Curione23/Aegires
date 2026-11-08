@@ -184,7 +184,7 @@ public class MessageListScreen implements Screen {
         } else {
             activity.apiClient.fetchChannelName(channelId, new ApiClient.Callback<String>() {
                 @Override public void onSuccess(String name) {
-                    if (activity == null) return;
+                    if (activity == null || channelNameTv == null) return;
                     if (name != null) {
                         activity.channelNameCache.put(channelId, name);
                         channelNameTv.setText(name);
@@ -201,12 +201,14 @@ public class MessageListScreen implements Screen {
             activity.apiClient.fetchRoles(guildId, new ApiClient.Callback<java.util.Map<String, a.b.model.Role>>() {
                 @Override public void onSuccess(java.util.Map<String, a.b.model.Role> roles) {
                     if (activity != null && roles != null) activity.roleCache.putAll(roles);
-                    feed.loadNewMessages();
+                    if (feed != null) feed.loadNewMessages();
                 }
-                @Override public void onError(String err) { feed.loadNewMessages(); }
+                @Override public void onError(String err) { 
+                    if (feed != null) feed.loadNewMessages();
+                }
             });
         } else {
-            feed.loadNewMessages();
+            if (feed != null) feed.loadNewMessages();
         }
     }
 
