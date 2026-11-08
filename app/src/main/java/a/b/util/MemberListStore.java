@@ -25,7 +25,10 @@ public final class MemberListStore {
         }
     }
 
-    public interface Listener { void onMemberListChanged(); }
+    public interface Listener { 
+        void onMemberListChanged(); 
+        void onMemberListRangeChanged(int positionStart, int itemCount);
+    }
 
     private final ArrayList<Entry> items = new ArrayList<>();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
@@ -101,37 +104,44 @@ public final class MemberListStore {
                 JSONArray range = op.optJSONArray("range");
                 JSONArray arr = op.optJSONArray("items");
                 if (range == null || arr == null) return;
-                int start = range.optInt(0), end = range.optInt(1);
+                int start = range.optInt(0);
                 pad(start);
                 for (int i = 0; i < arr.length(); i++) {
                     set(start + i, parse(arr.optJSONObject(i), nickCache, nameCache));
                 }
-                if (arr.length() < end - start + 1) {
-                    while (items.size() > start + arr.length()) items.remove(items.size() - 1);
-                }
+                if (arr.length() > 0) fireRange(start, arr.length());
                 break;
             }
             case "INSERT": {
                 int index = op.optInt("index");
                 pad(index);
                 items.add(index, parse(op.optJSONObject("item"), nickCache, nameCache));
+                fireRange(index, Math.max(1, items.size() - index));
                 break;
             }
-            case "UPDATE":
-                set(op.optInt("index"), parse(op.optJSONObject("item"), nickCache, nameCache));
+            case "UPDATE": {
+                int index = op.optInt("index");
+                set(index, parse(op.optJSONObject("item"), nickCache, nameCache));
+                fireRange(index, 1);
                 break;
+            }
             case "DELETE": {
                 int index = op.optInt("index");
-                if (index >= 0 && index < items.size()) items.remove(index);
+                if (index >= 0 && index < items.size()) {
+                    items.remove(index);
+                    if (listSize > 0) listSize--;
+                    fireRange(index, Math.max(1, items.size() - index));
+                }
                 break;
             }
             case "INVALIDATE": {
                 JSONArray range = op.optJSONArray("range");
                 if (range == null) return;
-                for (int i = range.optInt(0); i <= range.optInt(1) && i < items.size(); i++) items.set(i, null);
+                int start = range.optInt(0), end = range.optInt(1);
+                for (int i = start; i <= end && i < items.size(); i++) items.set(i, null);
+                fireRange(start, end - start + 1);
                 break;
             }
-            default:
         }
     }
 
@@ -179,5 +189,10 @@ public final class MemberListStore {
 
     private void fire() {
         for (Listener l : listeners) l.onMemberListChanged();
+    }
+
+    private void fireRange(int start, int count) {
+        if (count <= 0) return;
+        for (Listener l : listeners) l.onMemberListRangeChanged(start, count);
     }
 }

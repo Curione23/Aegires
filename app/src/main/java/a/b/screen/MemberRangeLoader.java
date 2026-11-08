@@ -6,11 +6,11 @@ import androidx.recyclerview.widget.RecyclerView;
 import a.b.MainActivity;
 import a.b.util.MemberListStore;
 
-/* Drives lazy member-range requests as the user scrolls.*/
+/* Drives lazy member-range requests as the user scrolls. */
 final class MemberRangeLoader {
     private static final int BLOCK = 100;
-    private static final long PER_BLOCK_COOLDOWN_MS = 2000;
-    private static final long FOLLOWUP_DELAY_MS = 2100;
+    private static final long COOLDOWN_MS = 2000;
+    private static final long CHECK_INTERVAL_MS = 800;
 
     private final MainActivity activity;
     private final String guildId;
@@ -36,6 +36,9 @@ final class MemberRangeLoader {
 
     void ensureLoaded() {
         if (released || activity == null || activity.gateway == null) return;
+        
+        ui.removeCallbacks(this::ensureLoaded);
+        
         MemberListStore store = activity.memberList;
         if (store == null || !guildId.equals(store.guildId())) return;
         int total = store.total();
@@ -46,7 +49,11 @@ final class MemberRangeLoader {
         LinearLayoutManager lm = (LinearLayoutManager) raw;
         int first = lm.findFirstVisibleItemPosition();
         int last = lm.findLastVisibleItemPosition();
-        if (first < 0 || last < 0) return;
+        
+        if (first < 0 || last < 0) {
+            ui.postDelayed(this::ensureLoaded, 300);
+            return;
+        }
 
         int from = Math.max(0, first - 10);
         int to = Math.min(total - 1, last + 25);
@@ -56,14 +63,21 @@ final class MemberRangeLoader {
         for (int i = from; i <= to; i++) {
             if (store.get(i) == null) { missing = i; break; }
         }
-        if (missing < 0) return;
 
-        int block = missing / BLOCK;
-        long now = System.currentTimeMillis();
-        if (block == lastBlock && now - lastRequestAt < PER_BLOCK_COOLDOWN_MS) return;
-        lastBlock = block;
-        lastRequestAt = now;
-        activity.gateway.requestMemberRanges(guildId, channelId, block * BLOCK);
-        ui.postDelayed(this::ensureLoaded, FOLLOWUP_DELAY_MS);
+        if (missing >= 0) {
+            int block = missing / BLOCK;
+            long now = System.currentTimeMillis();
+            
+            if (now - lastRequestAt >= COOLDOWN_MS) {
+                if (activity.gateway.requestMemberRanges(guildId, channelId, block * BLOCK)) {
+                    lastBlock = block;
+                    lastRequestAt = now;
+                }
+            }
+            
+            ui.postDelayed(this::ensureLoaded, CHECK_INTERVAL_MS);
+        } else {
+            lastBlock = -1;
+        }
     }
 }

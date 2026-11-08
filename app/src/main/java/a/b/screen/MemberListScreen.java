@@ -29,6 +29,7 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Runnable refresh = this::refreshNow;
     private MemberRangeLoader rangeLoader;
+    private int lastTotal = -1;
 
     public MemberListScreen(String guildId, String channelId) {
         this.guildId = guildId;
@@ -75,6 +76,12 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         if (activity == null) return;
         ui.removeCallbacks(refresh);
         ui.postDelayed(refresh, 120);
+    }
+
+    @Override public void onMemberListRangeChanged(int positionStart, int itemCount) {
+        if (adapter != null && itemCount > 0) {
+            adapter.notifyItemRangeChanged(positionStart, itemCount);
+        }
     }
 
     private void refreshNow() {

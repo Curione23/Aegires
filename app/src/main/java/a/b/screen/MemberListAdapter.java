@@ -28,6 +28,7 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     MemberListAdapter(MainActivity activity, String guildId) {
         this.activity = activity;
         this.guildId = guildId;
+        setHasStableIds(true);
     }
 
     void release() {
@@ -43,6 +44,14 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         Entry e = entryAt(pos);
         if (e == null) return TYPE_PLACEHOLDER;
         return e.group ? TYPE_GROUP : TYPE_MEMBER;
+    }
+    
+    @Override public long getItemId(int position) {
+        Entry e = entryAt(position);
+        if (e == null) return -position;
+        if (e.group) return e.groupId != null ? e.groupId.hashCode() : -position;
+        if (e.userId != null) return e.userId.hashCode();
+        return -position;
     }
 
     @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {

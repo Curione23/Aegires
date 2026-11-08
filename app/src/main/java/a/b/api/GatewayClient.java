@@ -143,8 +143,8 @@ public class GatewayClient extends WebSocketListener {
         subscribedChannel = channelId;
     }
 
-    public void requestMemberRanges(String guildId, String channelId, int startIndex) {
-        if (!ready || guildId == null || channelId == null) return;
+    public boolean requestMemberRanges(String guildId, String channelId, int startIndex) {
+        if (!ready || guildId == null || channelId == null) return false;
         java.util.LinkedHashSet<Integer> starts = new java.util.LinkedHashSet<>();
         starts.add(0);
         starts.add(startIndex);
@@ -152,8 +152,8 @@ public class GatewayClient extends WebSocketListener {
         if (startIndex == 0) starts.add(200);
         JSONArray ranges = new JSONArray();
         for (int s : starts) ranges.put(new JSONArray().put(s).put(s + 99));
-        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true,
-            "channels", obj(channelId, ranges)));
+        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "channels", obj(channelId, ranges)));
+        return true;
     }
 
     public void resetSubscriptionCache() {
