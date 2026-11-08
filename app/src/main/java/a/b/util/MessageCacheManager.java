@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import a.b.model.Embed;
+import a.b.model.EmbedField;
 import a.b.model.Message;
 
 public class MessageCacheManager {
@@ -130,18 +131,61 @@ public class MessageCacheManager {
             o.put("id", m.id); 
             o.put("content", m.content); 
             o.put("timestamp", m.timestamp);
+            
             if (m.author != null) {
                 JSONObject a = new JSONObject();
                 a.put("id", m.author.id); a.put("username", m.author.username);
                 a.put("global_name", m.author.globalName); a.put("avatar", m.author.avatar);
                 o.put("author", a);
             }
-            if (m.memberNick != null) {
+            
+            if (m.memberNick != null || (m.roleIds != null && !m.roleIds.isEmpty())) {
                 JSONObject mem = new JSONObject();
-                mem.put("nick", m.memberNick);
+                if (m.memberNick != null) mem.put("nick", m.memberNick);
+                if (m.roleIds != null && !m.roleIds.isEmpty()) {
+                    JSONArray rolesArr = new JSONArray();
+                    for (String r : m.roleIds) rolesArr.put(r);
+                    mem.put("roles", rolesArr);
+                }
                 o.put("member", mem);
             }
             
+            if (m.replyToMessageId != null) {
+                JSONObject ref = new JSONObject();
+                ref.put("message_id", m.replyToMessageId);
+                if (m.replyToChannelId != null) ref.put("channel_id", m.replyToChannelId);
+                o.put("message_reference", ref);
+
+                if (!m.replyToMissing) {
+                    JSONObject refMsg = new JSONObject();
+                    if (m.replyToAuthorId != null) {
+                        JSONObject refAuthor = new JSONObject();
+                        refAuthor.put("id", m.replyToAuthorId);
+                        String name = m.replyToAuthorName != null ? m.replyToAuthorName : "unknown";
+                        refAuthor.put("username", name);
+                        refAuthor.put("global_name", name);
+                        refMsg.put("author", refAuthor);
+                    }
+                    if (m.replyToContent != null) refMsg.put("content", m.replyToContent);
+                    o.put("referenced_message", refMsg);
+                }
+            }
+
+            if (m.mentionedUserIds != null && !m.mentionedUserIds.isEmpty()) {
+                JSONArray mentionsArr = new JSONArray();
+                for (String uid : m.mentionedUserIds) {
+                    JSONObject uObj = new JSONObject();
+                    uObj.put("id", uid);
+                    String name = m.mentionedUsers.get(uid);
+                    if (name != null) {
+                        uObj.put("username", name);
+                        uObj.put("global_name", name);
+                    }
+                    mentionsArr.put(uObj);
+                }
+                o.put("mentions", mentionsArr);
+            }
+
             if (m.embeds != null && !m.embeds.isEmpty()) {
                 JSONArray embedsArr = new JSONArray();
                 for (Embed e : m.embeds) {
@@ -175,6 +219,18 @@ public class MessageCacheManager {
                         JSONObject f = new JSONObject();
                         f.put("text", e.footer);
                         eo.put("footer", f);
+                    }
+                    
+                    if (e.fields != null && !e.fields.isEmpty()) {
+                        JSONArray fieldsArr = new JSONArray();
+                        for (EmbedField field : e.fields) {
+                            JSONObject fo = new JSONObject();
+                            if (field.name != null) fo.put("name", field.name);
+                            if (field.value != null) fo.put("value", field.value);
+                            fo.put("inline", field.inline);
+                            fieldsArr.put(fo);
+                        }
+                        eo.put("fields", fieldsArr);
                     }
                     embedsArr.put(eo);
                 }
