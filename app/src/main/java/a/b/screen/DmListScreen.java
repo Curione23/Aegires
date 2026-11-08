@@ -23,7 +23,6 @@ public class DmListScreen implements Screen, MentionStore.Listener {
     private String error;
     private DmRowView rowView;
 
-    /** Debounced re-render for mention-store pings; canceled in onDestroy. */
     private final Runnable renderRunnable = this::render;
 
     @Override
@@ -34,7 +33,8 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.BG_SECONDARY);
-        Ui.AppBar bar = new Ui.AppBar(host, "Direct Messages", Ui.BG_SECONDARY, host::goBack);
+        
+        Ui.AppBar bar = new Ui.AppBar(host, "Direct Messages", Ui.BG_SECONDARY, null);
         root.addView(bar.view, new LinearLayout.LayoutParams(-1, -2));
 
         ScrollView scroll = new ScrollView(host);

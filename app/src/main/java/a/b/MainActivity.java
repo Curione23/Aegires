@@ -19,12 +19,13 @@ import a.b.util.Crypto;
 import a.b.util.DiskCache;
 import a.b.util.MemberListStore;
 import a.b.util.MentionStore;
+import a.b.util.MessageCacheManager;
 import a.b.util.Ui;
 import a.b.model.MentionItem;
+import a.b.model.Message;
 import a.b.util.PermissionUtil;
 import a.b.util.TokenStore;
 import java.util.List;
-import java.util.Map;
 import a.b.model.Channel;
 import a.b.model.Guild;
 import a.b.model.GuildInfo;
@@ -46,6 +47,7 @@ public class MainActivity extends Activity {
     public MentionStore mentions;
     public MemberListStore memberList = new MemberListStore();
     public DiskCache diskCache;
+    public MessageCacheManager messageCache;
     public String selfUserId;
     public boolean gatewayConnected;
     public ConcurrentHashMap<String, String> userNameCache = new ConcurrentHashMap<>();
@@ -70,6 +72,7 @@ public class MainActivity extends Activity {
         rootFrame.setBackgroundColor(Ui.BG_TERTIARY);
         getWindow().setStatusBarColor(Ui.BG_TERTIARY);
         getWindow().setNavigationBarColor(Ui.BG_TERTIARY);
+        
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootFrame, (v, windowInsets) -> {
             androidx.core.graphics.Insets bars = windowInsets.getInsets(
                     androidx.core.view.WindowInsetsCompat.Type.systemBars() | androidx.core.view.WindowInsetsCompat.Type.displayCutout());
@@ -83,13 +86,15 @@ public class MainActivity extends Activity {
         imageLoader = new ImageLoader();
         mentions = new MentionStore(this);
         diskCache = new DiskCache(this);
+        messageCache = new MessageCacheManager(this);
+        
         Crypto.Preset saved = Crypto.Preset.fromIndex(getSharedPreferences("e2ee", MODE_PRIVATE).getInt("preset", Crypto.Preset.AES256.index));
         if (saved != null) e2eePreset = saved;
 
         String savedToken = TokenStore.load(this);
         if (savedToken != null) {
             setToken(savedToken);
-            resetTo(new GuildListScreen());
+            resetTo(new HomeScreen(this));
         } else {
             navigate(new LoginScreen());
         }
@@ -126,15 +131,41 @@ public class MainActivity extends Activity {
 
             @Override public void onDispatch(String type, JSONObject d) {
                 if (d != null) invalidateCaches(type, d);
-                if (d != null && "GUILD_MEMBER_LIST_UPDATE".equals(type)) {
-                    memberList.handle(d, userNickCache, userNameCache);
-                } else if (d != null && "MESSAGE_CREATE".equals(type)) {
+                
+                String chId = d != null ? d.optString("channel_id", null) : null;
+                boolean isActive = chId != null && chId.equals(currentChannelId());
+                
+                if (d != null && "MESSAGE_CREATE".equals(type)) {
+                    if (chId != null && !isActive) {
+                        try { messageCache.appendMessage(chId, Message.fromJson(d)); } catch (Exception ignored) {}
+                    }
                     mentions.onMessageCreate(d, selfId(), currentChannelId());
+                } else if (d != null && "MESSAGE_UPDATE".equals(type)) {
+                    if (chId != null) {
+                        try { messageCache.updateMessage(chId, Message.fromJson(d)); } catch (Exception ignored) {}
+                        if (isActive) saveActiveCache();
+                    }
                 } else if (d != null && "MESSAGE_DELETE".equals(type)) {
+                    if (chId != null) {
+                        messageCache.deleteMessage(chId, d.optString("id", ""));
+                        if (isActive) saveActiveCache();
+                    }
                     mentions.remove(d.optString("id", ""));
+                } else if (d != null && "GUILD_MEMBER_LIST_UPDATE".equals(type)) {
+                    memberList.handle(d, userNickCache, userNameCache);
                 }
+
                 for (Screen s : screenStack.toArray(new Screen[0])) {
                     if (s instanceof MessageListScreen) ((MessageListScreen) s).onGatewayEvent(type, d);
+                }
+            }
+            
+            private void saveActiveCache() {
+                if (screenStack.isEmpty()) return;
+                Screen top = screenStack.peek();
+                if (top instanceof MessageListScreen) {
+                    MessageListScreen msgScreen = (MessageListScreen) top;
+                    messageCache.saveLastChannelState(msgScreen.guildId, msgScreen.channelId, messageCache.getMessages(msgScreen.channelId));
                 }
             }
 
@@ -203,32 +234,19 @@ public class MainActivity extends Activity {
 
     public void logout() {
         derivationGen.incrementAndGet();
-        if (gateway != null) {
-            gateway.shutdown();
-            gateway = null;
-        }
+        if (gateway != null) { gateway.shutdown(); gateway = null; }
         gatewayConnected = false;
-        selfUserId = null;
-        e2eeKey = null;
-        e2eeEnabled = false;
+        selfUserId = null; e2eeKey = null; e2eeEnabled = false;
         TokenStore.clear(this);
 
-        channelCache.clear();
-        guildCache.clear();
-        guildInfoCache.clear();
-        userNameCache.clear();
-        channelNameCache.clear();
-        roleCache.clear();
-        userNickCache.clear();
-        mentions.clear();
-        memberList.clear();
-        diskCache.clearAll();
-        diskCache.setAccount(null);
+        channelCache.clear(); guildCache.clear(); guildInfoCache.clear();
+        userNameCache.clear(); channelNameCache.clear(); roleCache.clear();
+        userNickCache.clear(); mentions.clear(); memberList.clear();
+        diskCache.clearAll(); diskCache.setAccount(null);
 
         if (apiClient != null) apiClient.shutdown();
         apiClient = new ApiClient(handler);
-        token = null;
-        userId = null;
+        token = null; userId = null;
         resetTo(new LoginScreen());
     }
 
@@ -271,11 +289,8 @@ public class MainActivity extends Activity {
         android.webkit.WebView wv = findWebView(fullscreenOverlay);
         if (wv != null) {
             try {
-                wv.stopLoading();
-                wv.loadUrl("about:blank");
-                wv.clearHistory();
-                wv.clearCache(true);
-                wv.destroy();
+                wv.stopLoading(); wv.loadUrl("about:blank"); wv.clearHistory();
+                wv.clearCache(true); wv.destroy();
             } catch (Exception ignored) {}
         }
         rootFrame.removeView(fullscreenOverlay);
@@ -294,10 +309,9 @@ public class MainActivity extends Activity {
         return null;
     }
 
-    @Override
-    public void onBackPressed() {
-        if (fullscreenOverlay != null) hideFullscreen();
-        else goBack();
+    @Override public void onBackPressed() {
+        if (fullscreenOverlay != null) { hideFullscreen(); return; }
+        goBack();
     }
 
     public void resetTo(Screen screen) {
@@ -312,35 +326,29 @@ public class MainActivity extends Activity {
         navigate(screen);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (!screenStack.isEmpty()) screenStack.peek().onActivityResult(requestCode, resultCode, data);
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
         if (firstResume) { firstResume = false; return; }
         if (screenStack.isEmpty()) return;
         try { screenStack.peek().onResume(); } catch (Exception ignored) {}
     }
 
-    @Override
-    protected void onPause() {
+    @Override protected void onPause() {
         super.onPause();
         if (screenStack.isEmpty()) return;
         try { screenStack.peek().onPause(); } catch (Exception ignored) {}
     }
 
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         if (gateway != null) gateway.shutdown();
         if (apiClient != null) apiClient.shutdown();
         super.onDestroy();
     }
 
-    public void toast(String msg) {
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-    }
+    public void toast(String msg) { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show(); }
 }

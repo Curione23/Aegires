@@ -26,8 +26,8 @@ public class MessageListScreen implements Screen {
     private static final int MATCH = -1;
 
     MainActivity activity;
-    final String guildId;
-    final String channelId;
+    public final String guildId;
+    public final String channelId;
     public MessageAdapter adapter;
     public List<Message> messages = new ArrayList<>();
     final Set<String> messageIds = new HashSet<>();
@@ -176,6 +176,27 @@ public class MessageListScreen implements Screen {
     private void subscribeAndLoad() {
         subscribe();
         if (activity.apiClient == null) return;
+        
+        List<Message> cached = activity.messageCache.getMessages(channelId);
+        if (cached == null || cached.isEmpty()) {
+            cached = activity.messageCache.loadLastChannelMessages(channelId);
+        }
+        
+        boolean hasCache = cached != null && !cached.isEmpty();
+        
+        if (hasCache) {
+            messages.clear();
+            messageIds.clear();
+            for (Message m : cached) {
+                messages.add(m);
+                messageIds.add(m.id);
+            }
+            adapter.submitList(new ArrayList<>(messages));
+            scrollToBottom();
+        }
+
+        activity.messageCache.saveLastChannelState(guildId, channelId, messages);
+
         String cachedName = activity.channelNameCache.get(channelId);
         if (guildId == null) {
             loadDmTitle();
@@ -197,14 +218,15 @@ public class MessageListScreen implements Screen {
                 }
             });
         }
+        
         if (guildId != null) {
             activity.apiClient.fetchRoles(guildId, new ApiClient.Callback<java.util.Map<String, a.b.model.Role>>() {
                 @Override public void onSuccess(java.util.Map<String, a.b.model.Role> roles) {
                     if (activity != null && roles != null) activity.roleCache.putAll(roles);
-                    if (feed != null) feed.loadNewMessages();
+                    if (feed != null) feed.loadNewMessages(); 
                 }
                 @Override public void onError(String err) { 
-                    if (feed != null) feed.loadNewMessages();
+                    if (feed != null) feed.loadNewMessages(); 
                 }
             });
         } else {
@@ -291,6 +313,10 @@ public class MessageListScreen implements Screen {
             typing.removeUser(m.author.id);
         }
         if (feed.merge(java.util.Collections.singletonList(m), false)) {
+            if (activity != null && activity.messageCache != null) {
+                activity.messageCache.appendMessage(channelId, m);
+                activity.messageCache.saveLastChannelState(guildId, channelId, messages);
+            }
             messageList.post(() -> {
                 if (messageList == null || adapter == null) return;
                 adapter.submitList(new ArrayList<>(messages));
@@ -302,6 +328,11 @@ public class MessageListScreen implements Screen {
     private void gatewayUpdate(Message incoming) {
         if (incoming == null || messageList == null || adapter == null) return;
         MessageCryptoHelper.decryptMessageInPlace(this, incoming);
+        
+        if (activity != null && activity.messageCache != null) {
+            activity.messageCache.updateMessage(channelId, incoming);
+        }
+
         int i = incoming.id == null ? -1 : feed.indexOf(incoming.id);
         if (i < 0) return;
         messages.get(i).mergeFrom(incoming);
@@ -313,6 +344,11 @@ public class MessageListScreen implements Screen {
 
     void gatewayDelete(String id) {
         if (id == null || messageList == null || adapter == null || feed == null) return;
+        
+        if (activity != null && activity.messageCache != null) {
+            activity.messageCache.deleteMessage(channelId, id);
+        }
+
         if (!feed.removeMessage(id)) return;
         messageList.post(() -> {
             if (adapter == null) return;

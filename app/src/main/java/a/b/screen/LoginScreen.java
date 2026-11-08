@@ -78,7 +78,7 @@ public class LoginScreen implements Screen {
             }
             TokenStore.save(activity, token);
             activity.setToken(token);
-            activity.resetTo(new GuildListScreen());
+            activity.resetTo(new HomeScreen(activity));
         };
         connect.setOnClickListener(v -> submit.run());
         tokenInput.setOnEditorActionListener((v, actionId, e) -> {

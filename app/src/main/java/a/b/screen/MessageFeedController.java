@@ -15,7 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import a.b.api.ApiClient;
 import a.b.model.Message;
 
-/** Paged message feed: load, merge, prepend, lazy roles. */
 final class MessageFeedController {
     private static final int PAGE_SIZE = 30;
     private static final int MAX_MESSAGES = 1000;
@@ -32,6 +31,7 @@ final class MessageFeedController {
     private final Set<String> messageIds;
 
     private boolean loadingNew, loadingOld, allLoaded;
+    private boolean initialFetchDone = false;
     private final Set<String> pendingNickFetches = new HashSet<>();
     private final Set<String> memberChecked = new HashSet<>();
     private final ConcurrentHashMap<String, Long> memberFailedUntil = new ConcurrentHashMap<>();
@@ -52,14 +52,23 @@ final class MessageFeedController {
     void loadNewMessages() {
         if (loadingNew || host.activity == null || host.activity.apiClient == null) return;
         loadingNew = true;
-        String after = messages.isEmpty() ? null : messages.get(messages.size() - 1).id;
+        
+        String after = (!initialFetchDone || messages.isEmpty()) ? null : messages.get(messages.size() - 1).id;
+        
         host.activity.apiClient.fetchMessages(host.channelId, null, after, PAGE_SIZE, new ApiClient.Callback<List<Message>>() {
             @Override public void onSuccess(List<Message> batch) {
                 loadingNew = false;
+                initialFetchDone = true;
+                
                 if (host.activity == null) return;
-                boolean isInitialLoad = messages.isEmpty();
-                boolean stick = isInitialLoad || host.atBottom();
+                boolean stick = host.atBottom();
                 boolean changed = merge(batch, false);
+                
+                if (!initialFetchDone && !batch.isEmpty()) {
+                    pruneStaleMessages(batch);
+                    changed = true;
+                }
+
                 if (changed) {
                     messageList.post(() -> {
                         adapter.submitList(new ArrayList<>(messages));
@@ -76,6 +85,27 @@ final class MessageFeedController {
                 if (host.activity != null && messages.isEmpty()) host.activity.toast("Couldn't load messages: " + err);
             }
         });
+    }
+
+    private void pruneStaleMessages(List<Message> freshBatch) {
+        if (freshBatch.isEmpty()) return;
+        Set<String> freshIds = new HashSet<>();
+        for (Message m : freshBatch) if (m.id != null) freshIds.add(m.id);
+        
+        Message oldest = freshBatch.get(0);
+        Message newest = freshBatch.get(freshBatch.size() - 1);
+
+        java.util.Iterator<Message> it = messages.iterator();
+        while (it.hasNext()) {
+            Message cached = it.next();
+            if (cached.id != null && !freshIds.contains(cached.id)) {
+                if (BY_ID.compare(cached, oldest) >= 0 && BY_ID.compare(cached, newest) <= 0) {
+                    it.remove();
+                    messageIds.remove(cached.id);
+                    if (adapter != null) adapter.parsedContentCache.remove(cached.id);
+                }
+            }
+        }
     }
 
     void loadOlderMessages() {
@@ -150,11 +180,28 @@ final class MessageFeedController {
             if (m.author != null && m.author.id != null && isReal(m.memberNick) && host.guildId != null && host.activity != null && host.activity.userNickCache != null) {
                 host.activity.userNickCache.put(host.guildId + "_" + m.author.id, m.memberNick);
             }
-            if (m.id != null && messageIds.add(m.id)) {
-                messages.add(m);
-                changed = true;
+            
+            if (m.id != null) {
+                if (!messageIds.contains(m.id)) {
+                    messages.add(m);
+                    messageIds.add(m.id);
+                    changed = true;
+                } else {
+                    int idx = indexOf(m.id);
+                    if (idx >= 0) {
+                        Message existing = messages.get(idx);
+                        boolean contentChanged = !java.util.Objects.equals(existing.content, m.content);
+                        boolean embedsAdded = (m.embeds != null && !m.embeds.isEmpty() && (existing.embeds == null || existing.embeds.isEmpty()));
+                        
+                        if (contentChanged || embedsAdded) {
+                            messages.set(idx, m); 
+                            changed = true;
+                        }
+                    }
+                }
             }
         }
+        
         if (!changed) return false;
         Collections.sort(messages, BY_ID);
         while (messages.size() > MAX_MESSAGES) {
@@ -164,6 +211,12 @@ final class MessageFeedController {
                 if (adapter != null) adapter.parsedContentCache.remove(gone.id);
             }
         }
+        
+        if (host.activity != null && host.activity.messageCache != null) {
+            host.activity.messageCache.putMessages(host.channelId, messages);
+            host.activity.messageCache.saveLastChannelState(host.guildId, host.channelId, messages);
+        }
+        
         return true;
     }
 

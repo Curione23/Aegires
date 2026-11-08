@@ -67,6 +67,8 @@ public class GatewayClient extends WebSocketListener {
     private volatile boolean ready;
     private volatile String subscribedGuild, subscribedChannel;
     private volatile String pendingGuild, pendingChannel;
+    private volatile String currentGuildId;
+    private final java.util.Set<String> activeChannels = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
     private final java.util.concurrent.atomic.AtomicInteger socketGen = new java.util.concurrent.atomic.AtomicInteger();
     private final Runnable reconnectRunnable = this::doConnect;
 
@@ -130,15 +132,30 @@ public class GatewayClient extends WebSocketListener {
     }
 
     public void subscribeToGuild(String guildId, String channelId) {
-        if (guildId == null) return;
-        if (guildId.equals(subscribedGuild) && Objects.equals(channelId, subscribedChannel)) return;
+        if (guildId != null) currentGuildId = guildId;
+        
+        if (channelId != null) {
+            activeChannels.add(channelId);
+            if (activeChannels.size() > 10) {
+                java.util.Iterator<String> it = activeChannels.iterator();
+                if (it.hasNext()) { it.next(); it.remove(); }
+            }
+        }
+
         if (!ready) {
             pendingGuild = guildId;
             pendingChannel = channelId;
             return;
         }
-        Object channels = channelId == null ? null : obj(channelId, new JSONArray().put(new JSONArray().put(0).put(99)));
-        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "channels", channels));
+
+        JSONObject channelsPayload = new JSONObject();
+        try {
+            for (String ch : activeChannels) {
+                channelsPayload.put(ch, new JSONArray().put(new JSONArray().put(0).put(99)));
+            }
+        } catch (JSONException ignored) {}
+
+        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "channels", channelsPayload));
         subscribedGuild = guildId;
         subscribedChannel = channelId;
     }
@@ -161,18 +178,11 @@ public class GatewayClient extends WebSocketListener {
         subscribedChannel = null;
     }
 
-    @Override
-    public void onOpen(WebSocket webSocket, Response response) {
-        attempt = 0;
-    }
+    @Override public void onOpen(WebSocket webSocket, Response response) { attempt = 0; }
 
-    @Override
-    public void onMessage(WebSocket webSocket, String text) {
-        handlePayload(text);
-    }
+    @Override public void onMessage(WebSocket webSocket, String text) { handlePayload(text); }
 
-    @Override
-    public void onMessage(WebSocket webSocket, ByteString bytes) {
+    @Override public void onMessage(WebSocket webSocket, ByteString bytes) {
         try {
             String json = zlib.feed(bytes.toByteArray());
             if (json != null) handlePayload(json);
@@ -181,14 +191,12 @@ public class GatewayClient extends WebSocketListener {
         }
     }
 
-    @Override
-    public void onClosing(WebSocket webSocket, int code, String reason) {
+    @Override public void onClosing(WebSocket webSocket, int code, String reason) {
         webSocket.close(1000, null);
         onDisconnected("closed (" + code + ")");
     }
 
-    @Override
-    public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+    @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
         String msg = t.getMessage() != null ? t.getMessage() : t.toString();
         onDisconnected("failure: " + msg);
     }
@@ -258,9 +266,13 @@ public class GatewayClient extends WebSocketListener {
             resetSubscriptionCache();
             ready = true;
             attempt = 0;
-            String g = pendingGuild, c = pendingChannel;
-            pendingGuild = pendingChannel = null;
-            if (g != null) subscribeToGuild(g, c);
+            
+            if (currentGuildId != null) {
+                subscribeToGuild(currentGuildId, subscribedChannel);
+            } else if (pendingGuild != null) {
+                subscribeToGuild(pendingGuild, pendingChannel);
+            }
+            
             handler.post(() -> listener.onReady(d));
         }
         handler.post(() -> listener.onDispatch(type, d));

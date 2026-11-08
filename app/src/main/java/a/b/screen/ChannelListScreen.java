@@ -54,7 +54,7 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.BG_SECONDARY);
 
-        bar = new Ui.AppBar(activity, guild.name, Ui.BG_SECONDARY, activity::goBack);
+        bar = new Ui.AppBar(activity, guild.name, Ui.BG_SECONDARY, null);
         bar.title.setTextSize(16);
         bar.bar.addView(viewFactory.buildGuildIcon(guild), 1);
         root.addView(bar.view, new LinearLayout.LayoutParams(-1, -2));
