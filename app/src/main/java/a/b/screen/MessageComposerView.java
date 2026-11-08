@@ -42,24 +42,34 @@ final class MessageComposerView {
     }
 
     View buildPill() {
+        LinearLayout row = new LinearLayout(host.activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        rowLp.setMargins(dp(8), dp(4), dp(8), dp(8));
+        row.setLayoutParams(rowLp);
+
         attachIcon = new ImageView(host.activity);
-        attachIcon.setPadding(dp(10), dp(10), dp(10), dp(10));
-        attachIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
-        attachIcon.setBackground(Ui.ripple(null, -1));
+        attachIcon.setPadding(dp(8), dp(8), dp(8), dp(8));
+        attachIcon.setBackground(Ui.ripple(Ui.oval(Ui.BG_INPUT), -1));
         attachIcon.setClickable(true);
         setAttachCancel(false);
         attachIcon.setOnClickListener(v -> {
             if (editingId != null) cancelEdit();
             else host.picker().pickImage();
         });
+        LinearLayout.LayoutParams attachLp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        attachLp.setMarginEnd(dp(6));
+        row.addView(attachIcon, attachLp);
 
         input = new EditText(host.activity);
         input.setHint(host.encOn() ? HINT_ENCRYPTED : HINT_MESSAGE);
         input.setHintTextColor(HINT);
         input.setTextColor(TEXT);
         input.setTextSize(16);
-        input.setBackgroundColor(Color.TRANSPARENT);
-        input.setPadding(dp(4), dp(10), dp(4), dp(10));
+        input.setGravity(Gravity.CENTER_VERTICAL);
+        input.setBackground(Ui.rounded(Ui.BG_INPUT, dp(20)));
+        input.setPadding(dp(14), dp(8), dp(14), dp(8));
+        input.setMinHeight(dp(40));
         input.setMaxLines(6);
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
             | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
@@ -69,27 +79,21 @@ final class MessageComposerView {
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void afterTextChanged(android.text.Editable e) { updateSendState(); }
         });
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(0, WRAP, 1f);
+        inputLp.setMargins(dp(4), 0, dp(4), 0);
+        row.addView(input, inputLp);
 
         sendIcon = new ImageView(host.activity);
-        sendIcon.setPadding(dp(10), dp(10), dp(10), dp(10));
-        sendIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
-        sendIcon.setBackground(Ui.ripple(null, -1));
+        sendIcon.setPadding(dp(8), dp(8), dp(8), dp(8));
         sendIcon.setClickable(true);
         sendIcon.setOnClickListener(v -> host.sendMessage());
+        LinearLayout.LayoutParams sendLp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        sendLp.setMarginStart(dp(6));
+        row.addView(sendIcon, sendLp);
+
         updateSendState();
 
-        LinearLayout pill = new LinearLayout(host.activity);
-        pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setPadding(dp(4), 0, dp(4), 0);
-        pill.setBackground(rounded(Ui.BG_INPUT, 22));
-        pill.addView(attachIcon);
-        pill.addView(input, new LinearLayout.LayoutParams(0, WRAP, 1f));
-        pill.addView(sendIcon);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
-        lp.setMargins(dp(10), dp(6), dp(10), dp(10));
-        pill.setLayoutParams(lp);
-        return pill;
+        return row;
     }
 
     View buildReplyBar() {
@@ -285,7 +289,14 @@ final class MessageComposerView {
         if (sendIcon == null || input == null) return;
         boolean can = input.getText().toString().trim().length() > 0
             || (editingId == null && pendingFileUri != null);
-        sendIcon.setImageDrawable(new Ui.Icon(Ui.I_SEND, can ? Ui.BLURPLE : HINT));
+            
+        if (can) {
+            sendIcon.setBackground(Ui.ripple(Ui.oval(Ui.BLURPLE), -1));
+            sendIcon.setImageDrawable(new Ui.Icon(Ui.I_SEND, Color.WHITE));
+        } else {
+            sendIcon.setBackground(Ui.ripple(Ui.oval(Ui.BG_INPUT), -1));
+            sendIcon.setImageDrawable(new Ui.Icon(Ui.I_SEND, HINT));
+        }
     }
 
     private void setAttachCancel(boolean cancel) {
