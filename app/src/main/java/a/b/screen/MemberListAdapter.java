@@ -155,8 +155,9 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             itemView.setAlpha("offline".equals(e.status) ? 0.45f : 1f);
             dot.setBackground(Ui.oval(MemberPresentation.statusColor(e.status)));
 
-            avatarWrap.setBackground(Ui.oval(Ui.avatarColor(e.userId)));
             boolean hasAvatar = Ui.isReal(e.avatar) && e.userId != null;
+            
+            avatarWrap.setBackground(Ui.oval(hasAvatar ? PAGE_BG : Ui.avatarColor(e.userId)));
 
             icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
             avatar.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);

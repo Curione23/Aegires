@@ -24,6 +24,7 @@ final class ProfileHeaderView {
     private final LinearLayout nameBlock;
     private ImageView bannerIv, avatarIv, avatarIcon;
     private TextView nameTv, userLineTv, botTag;
+    private FrameLayout inner;
 
     ProfileHeaderView(MainActivity activity, String userId) {
         this.activity = activity;
@@ -42,6 +43,7 @@ final class ProfileHeaderView {
         
         boolean hasAvatar = Ui.isReal(user.avatar) && user.id != null;
         
+        inner.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : Ui.avatarColor(user.id)));
         avatarIcon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         avatarIv.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
 
@@ -84,7 +86,7 @@ final class ProfileHeaderView {
         ringLp.leftMargin = dp(16);
         ringLp.topMargin = dp(BANNER_H - AVATAR / 2);
 
-        FrameLayout inner = new FrameLayout(activity);
+        inner = new FrameLayout(activity);
         inner.setBackground(Ui.oval(Ui.avatarColor(userId)));
         inner.setClipToOutline(true);
         

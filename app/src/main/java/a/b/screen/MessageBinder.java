@@ -46,11 +46,11 @@ final class MessageBinder {
         h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
 
         String uid = msg.author != null ? msg.author.id : null;
-        h.avatar.setBackground(Ui.oval(Ui.avatarColor(uid)));
-        h.avatar.setClipToOutline(true);
-        boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null
-            && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
+        boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
             
+        h.avatar.setBackground(Ui.oval(hasAvatar ? MessageAdapter.BG : Ui.avatarColor(uid)));
+        h.avatar.setClipToOutline(true);
+        
         if (adapter.imageLoader != null) {
             if (hasAvatar) {
                 adapter.imageLoader.load(MessageAdapter.CDN + "avatars/" + msg.author.id + "/" + msg.author.avatar + ".png?size=128", h.avatar);

@@ -52,16 +52,19 @@ final class MentionRowView {
 
         ImageView avatar = new ImageView(activity);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        avatar.setBackground(Ui.oval(Ui.avatarColor(m.authorId)));
         avatar.setClipToOutline(true);
+        
+        boolean hasAvatar = Ui.isReal(m.authorAvatar) && m.authorId != null;
+        
+        avatar.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : Ui.avatarColor(m.authorId)));
+        
         LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         avLp.setMarginEnd(dp(12));
-        boolean hasAvatar = Ui.isReal(m.authorAvatar) && m.authorId != null;
+        
         if (hasAvatar) {
             activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128", avatar);
-        } else {
-            avatar.setImageDrawable(null); // Clear recycled image
         }
+        row.addView(avatar, avLp);
 
         LinearLayout col = new LinearLayout(activity);
         col.setOrientation(LinearLayout.VERTICAL);

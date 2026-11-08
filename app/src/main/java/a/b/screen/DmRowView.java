@@ -83,13 +83,14 @@ final class DmRowView {
 
         FrameLayout wrap = new FrameLayout(activity);
         wrap.setLayoutParams(lp);
-        wrap.setBackground(Ui.oval(r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0]));
         wrap.setClipToOutline(true);
 
         ImageView icon = Ui.iconView(activity, Ui.I_USER, Color.WHITE, 24);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         
         boolean hasAvatar = r != null && r.hasAvatar() && r.id != null;
+        
+        wrap.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : (r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0])));
         
         icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
