@@ -61,6 +61,7 @@ public final class Ui {
     public static final String I_PEOPLE = "M16,11c1.66,0 2.99,-1.34 2.99,-3S17.66,5 16,5c-1.66,0 -3,1.34 -3,3s1.34,3 3,3zM8,11c1.66,0 2.99,-1.34 2.99,-3S9.66,5 8,5C6.34,5 5,6.34 5,8s1.34,3 3,3zM8,13c-2.33,0 -7,1.17 -7,3.5V19h14v-2.5c0,-2.33 -4.67,-3.5 -7,-3.5zM16,13c-0.29,0 -0.62,0.02 -0.97,0.05 1.16,0.84 1.97,1.97 1.97,3.45V19h6v-2.5c0,-2.33 -4.67,-3.5 -7,-3.5z";
     public static final String I_ATTACH = "M16.5,6v11.5c0,2.21 -1.79,4 -4,4s-4,-1.79 -4,-4V5c0,-1.38 1.12,-2.5 2.5,-2.5s2.5,1.12 2.5,2.5v10.5c0,0.55 -0.45,1 -1,1s-1,-0.45 -1,-1V6H10v9.5c0,1.38 1.12,2.5 2.5,2.5s2.5,-1.12 2.5,-2.5V5c0,-2.21 -1.79,-4 -4,-4S7,2.79 7,5v12.5c0,3.04 2.46,5.5 5.5,5.5s5.5,-2.46 5.5,-5.5V6h-1.5z";
     public static final String I_USER = "M12,12c2.21,0 4,-1.79 4,-4s-1.79,-4 -4,-4 -4,1.79 -4,4 1.79,4 4,4zM12,14c-2.67,0 -8,1.34 -8,4v2h16v-2c0,-2.66 -5.33,-4 -8,-4z";
+    public static final String I_MENU = "M3,18h18v-2H3v2zM3,13h18v-2H3v2zM3,6v2h18V6H3z";
 
     public static int dp(Context c, float v) {
         return Math.round(v * c.getResources().getDisplayMetrics().density);
@@ -199,6 +200,10 @@ public final class Ui {
         private final Context c;
 
         public AppBar(Context c, String titleText, int bgColor, final Runnable onBack) {
+            this(c, titleText, bgColor, onBack, I_BACK);
+        }
+
+        public AppBar(Context c, String titleText, int bgColor, final Runnable onBack, String navIconPath) {
             this.c = c;
             view = new LinearLayout(c);
             view.setOrientation(LinearLayout.VERTICAL);
@@ -210,7 +215,7 @@ public final class Ui {
             bar.setPadding(dp(c, onBack != null ? 4 : 16), 0, dp(c, 4), 0);
 
             if (onBack != null) {
-                FrameLayout back = iconButton(c, I_BACK, TEXT_HEADER);
+                FrameLayout back = iconButton(c, navIconPath, TEXT_HEADER);
                 back.setOnClickListener(v -> onBack.run());
                 bar.addView(back);
             }
@@ -229,7 +234,7 @@ public final class Ui {
             titleCol.addView(title);
             titleCol.addView(subtitle);
             bar.addView(titleCol, new LinearLayout.LayoutParams(0, -2, 1f));
-
+    
             actions = new LinearLayout(c);
             actions.setOrientation(LinearLayout.HORIZONTAL);
             actions.setGravity(Gravity.CENTER_VERTICAL);

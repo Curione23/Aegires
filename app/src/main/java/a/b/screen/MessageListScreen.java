@@ -122,7 +122,7 @@ public class MessageListScreen implements Screen {
     }
 
     private View buildHeader() {
-        Ui.AppBar bar = new Ui.AppBar(activity, "Loading\u2026", Ui.BG, activity::goBack);
+        Ui.AppBar bar = new Ui.AppBar(activity, "Loading\u2026", Ui.BG, activity::goBack, Ui.I_MENU);
         channelNameTv = bar.title;
         channelNameTv.setTextSize(16);
         TextView hash = text(guildId == null ? "@" : "#", Ui.MUTED, 22);
