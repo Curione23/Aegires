@@ -285,7 +285,9 @@ public class MessageListScreen implements Screen {
     private void gatewayCreate(Message m) {
         if (messageList == null || adapter == null) return;
         boolean stick = atBottom();
-        if (m != null && m.author != null && m.author.id != null) typing.removeUser(m.author.id);
+        if (typing != null && m != null && m.author != null && m.author.id != null) {
+            typing.removeUser(m.author.id);
+        }
         if (feed.merge(java.util.Collections.singletonList(m), false)) {
             messageList.post(() -> {
                 if (messageList == null || adapter == null) return;

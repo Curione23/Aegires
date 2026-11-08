@@ -54,8 +54,11 @@ final class MessageComposerView {
         attachIcon.setClickable(true);
         setAttachCancel(false);
         attachIcon.setOnClickListener(v -> {
-            if (editingId != null) cancelEdit();
-            else host.picker().pickImage();
+            if (editingId != null) {
+                cancelEdit();
+            } else if (host.picker() != null) {
+                host.picker().pickImage();
+            }
         });
         LinearLayout.LayoutParams attachLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         attachLp.setMarginEnd(dp(6));
