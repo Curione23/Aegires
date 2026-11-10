@@ -22,13 +22,19 @@ public class TimeUtils {
         Calendar then = Calendar.getInstance();
         then.setTimeInMillis(epochMs);
         String clock = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(epochMs));
-        int dayDiff = dayOfEra(now) - dayOfEra(then);
+        long dayDiff = Math.round((startOfDayMillis(now) - startOfDayMillis(then))
+                / (double) TimeUnit.DAYS.toMillis(1));
         if (dayDiff == 0) return "Today at " + clock;
         if (dayDiff == 1) return "Yesterday at " + clock;
         return DateFormat.getDateInstance(DateFormat.SHORT).format(new Date(epochMs));
     }
 
-    private static int dayOfEra(Calendar c) {
-        return c.get(Calendar.YEAR) * 366 + c.get(Calendar.DAY_OF_YEAR);
+    private static long startOfDayMillis(Calendar c) {
+        Calendar copy = (Calendar) c.clone();
+        copy.set(Calendar.HOUR_OF_DAY, 0);
+        copy.set(Calendar.MINUTE, 0);
+        copy.set(Calendar.SECOND, 0);
+        copy.set(Calendar.MILLISECOND, 0);
+        return copy.getTimeInMillis();
     }
 }
