@@ -169,7 +169,7 @@ public class GatewayClient extends WebSocketListener {
         if (startIndex == 0) starts.add(200);
         JSONArray ranges = new JSONArray();
         for (int s : starts) ranges.put(new JSONArray().put(s).put(s + 99));
-        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "channels", obj(channelId, ranges)));
+        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "members", obj(channelId, ranges)));
         return true;
     }
 

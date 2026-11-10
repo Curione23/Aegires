@@ -29,7 +29,6 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Runnable refresh = this::refreshNow;
     private MemberRangeLoader rangeLoader;
-    private int lastTotal = -1;
 
     public MemberListScreen(String guildId, String channelId) {
         this.guildId = guildId;
@@ -88,20 +87,24 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         if (activity == null) return;
         if (emptyView == null || bar == null) return;
         MemberListStore store = activity.memberList;
-        boolean mine = guildId.equals(store.guildId());
+        
+        boolean mine = store != null && guildId.equals(store.guildId());
         int total = mine ? store.total() : 0;
+        
         boolean bot = activity.apiClient != null && activity.apiClient.isBotAccount();
         if (!bot) {
             emptyView.setText("Loading members\u2026");
         }
         emptyView.setVisibility(total == 0 ? View.VISIBLE : View.GONE);
+        
         if (mine && store.memberCount() > 0) {
             bar.setSubtitle(store.memberCount() + " members \u00B7 " + store.onlineCount() + " online");
         } else {
             bar.setSubtitle(null);
         }
         if (adapter != null) adapter.notifyDataSetChanged();
-        if (mine && rangeLoader != null) rangeLoader.ensureLoaded();
+        
+        if (rangeLoader != null) rangeLoader.ensureLoaded(); 
     }
 
     @Override public View getView() { return view; }
@@ -117,7 +120,8 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         if (activity != null) activity.memberList.removeListener(this);
     }
 
-    @Override public void onDestroy() {
+    @Override
+    public void onDestroy() {
         ui.removeCallbacksAndMessages(null);
         if (activity != null) activity.memberList.removeListener(this);
         if (adapter != null) adapter.release();

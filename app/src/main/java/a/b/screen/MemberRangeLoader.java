@@ -36,20 +36,26 @@ final class MemberRangeLoader {
 
     void ensureLoaded() {
         if (released || activity == null || activity.gateway == null) return;
-        
         ui.removeCallbacks(this::ensureLoaded);
-        
         MemberListStore store = activity.memberList;
-        if (store == null || !guildId.equals(store.guildId())) return;
-        int total = store.total();
-        if (total <= 0) return;
+        if (store != null && store.guildId() != null && !guildId.equals(store.guildId())) return;
+        int total = store != null ? store.total() : 0;
+        if (total == 0) {
+            long now = System.currentTimeMillis();
+            if (now - lastRequestAt >= COOLDOWN_MS) {
+                if (activity.gateway.requestMemberRanges(guildId, channelId, 0)) {
+                    lastRequestAt = now;
+                }
+            }
+            ui.postDelayed(this::ensureLoaded, CHECK_INTERVAL_MS);
+            return;
+        }
 
         RecyclerView.LayoutManager raw = list.getLayoutManager();
         if (!(raw instanceof LinearLayoutManager)) return;
         LinearLayoutManager lm = (LinearLayoutManager) raw;
         int first = lm.findFirstVisibleItemPosition();
         int last = lm.findLastVisibleItemPosition();
-        
         if (first < 0 || last < 0) {
             ui.postDelayed(this::ensureLoaded, 300);
             return;
@@ -61,7 +67,7 @@ final class MemberRangeLoader {
 
         int missing = -1;
         for (int i = from; i <= to; i++) {
-            if (store.get(i) == null) { missing = i; break; }
+            if (store == null || store.get(i) == null) { missing = i; break; }
         }
 
         if (missing >= 0) {
@@ -74,7 +80,6 @@ final class MemberRangeLoader {
                     lastRequestAt = now;
                 }
             }
-            
             ui.postDelayed(this::ensureLoaded, CHECK_INTERVAL_MS);
         } else {
             lastBlock = -1;
