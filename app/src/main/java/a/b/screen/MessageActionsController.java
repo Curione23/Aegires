@@ -11,7 +11,7 @@ import a.b.model.Message;
 
 /** Long-press context menu, copy, delete, reply/edit entry points. */
 final class MessageActionsController {
-    private static final int MENU_REPLY = 1, MENU_COPY = 2, MENU_EDIT = 3, MENU_DELETE = 4;
+    private static final int MENU_REPLY = 1, MENU_COPY = 2, MENU_COPY_LINK = 3, MENU_EDIT = 4, MENU_DELETE = 5;
 
     private final MessageListScreen host;
 
@@ -26,8 +26,9 @@ final class MessageActionsController {
         PopupMenu menu = new PopupMenu(host.activity, anchor);
         menu.getMenu().add(0, MENU_REPLY, 0, "Reply");
         menu.getMenu().add(0, MENU_COPY, 1, "Copy text");
-        if (mine) menu.getMenu().add(0, MENU_EDIT, 2, "Edit");
-        if (mine || canManage) menu.getMenu().add(0, MENU_DELETE, 3, "Delete");
+        menu.getMenu().add(0, MENU_COPY_LINK, 2, "Copy message link");
+        if (mine) menu.getMenu().add(0, MENU_EDIT, 3, "Edit");
+        if (mine || canManage) menu.getMenu().add(0, MENU_DELETE, 4, "Delete");
         menu.setOnMenuItemClickListener(item -> {
             if (host.activity == null) return true;
             switch (item.getItemId()) {
@@ -36,6 +37,9 @@ final class MessageActionsController {
                     return true;
                 case MENU_COPY:
                     copyMessage(msg);
+                    return true;
+                case MENU_COPY_LINK:
+                    copyMessageLink(msg);
                     return true;
                 case MENU_EDIT:
                     if (host.composer() != null) host.composer().beginEdit(msg);
@@ -56,6 +60,20 @@ final class MessageActionsController {
         if (cm == null) { host.activity.toast("Couldn't copy"); return; }
         cm.setPrimaryClip(ClipData.newPlainText("message", msg.content == null ? "" : msg.content));
         host.activity.toast("Copied");
+    }
+
+    private void copyMessageLink(Message msg) {
+        if (host.activity == null) return;
+        if (msg == null || msg.id == null || host.channelId == null) {
+            host.activity.toast("Couldn't copy link");
+            return;
+        }
+        ClipboardManager cm = (ClipboardManager) host.activity.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm == null) { host.activity.toast("Couldn't copy link"); return; }
+        String guild = host.guildId != null ? host.guildId : "@me";
+        String link = "https://discord.com/channels/" + guild + "/" + host.channelId + "/" + msg.id;
+        cm.setPrimaryClip(ClipData.newPlainText("message link", link));
+        host.activity.toast("Link copied");
     }
 
     private void confirmDelete(Message msg) {

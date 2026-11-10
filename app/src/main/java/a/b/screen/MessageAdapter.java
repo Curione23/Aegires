@@ -63,6 +63,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     final DiscordMessageRenderer renderer;
     final AttachmentViewFactory attachmentFactory;
     final EmbedViewFactory embedFactory;
+    final MessageLinkPreviewFactory linkPreviewFactory;
     final MessageBinder binder;
 
     public MessageAdapter(MainActivity activity, List<Message> messages, ImageLoader loader, String guildId) {
@@ -85,6 +86,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
         attachmentFactory = new AttachmentViewFactory(this);
         embedFactory = new EmbedViewFactory(this);
         binder = new MessageBinder(this);
+        linkPreviewFactory = new MessageLinkPreviewFactory(this);
     }
 
     public void setLongPressListener(MessageLongPressListener l) { longPressListener = l; }
@@ -136,6 +138,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     public void invalidateMessage(String id) {
         if (id == null) return;
         parsedContentCache.remove(id);
+        linkPreviewFactory.invalidate(id);
         ui.post(() -> {
             for (int i = 0; i < displayList.size(); i++) {
                 Message message = displayList.get(i);
@@ -173,6 +176,7 @@ public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     boolean mentionsSelf(Message msg) { return binder.mentionsSelf(msg); }
     View attachmentView(Message.Attachment a, Message msg, ViewGroup parent) { return attachmentFactory.build(a, msg, parent); }
     View embedView(Embed e, Message msg, ViewGroup parent) { return embedFactory.build(e, msg, parent); }
+    List<View> linkPreviewViews(Message msg, ViewGroup parent) { return linkPreviewFactory.build(msg, parent); }
 
     void hideKeyboard() {
         if (activity == null) return;

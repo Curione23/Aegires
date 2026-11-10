@@ -31,7 +31,7 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
     private static final int LINK_FG = MessageAdapter.LINK_FG;
 
     private final MessageAdapter adapter;
-    final LinearLayout root, header, body, attachments, embeds;
+    final LinearLayout root, header, body, attachments, embeds, linkPreviews;
     final FrameLayout avatarWrap;
     final ImageView avatar, avatarIcon;
     final TextView name, time, reply, content;
@@ -105,12 +105,15 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         attachments.setOrientation(VERTICAL);
         embeds = new LinearLayout(context);
         embeds.setOrientation(VERTICAL);
+        linkPreviews = new LinearLayout(context);
+        linkPreviews.setOrientation(VERTICAL);
 
         body.addView(header);
         body.addView(reply);
         body.addView(content);
         body.addView(attachments);
         body.addView(embeds);
+        body.addView(linkPreviews);
         root.addView(body, new LinearLayout.LayoutParams(0, WRAP, 1f));
     }
 
@@ -150,6 +153,7 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         List<View> oldMedia = new ArrayList<>();
         for (int i = 0; i < attachments.getChildCount(); i++) oldMedia.add(attachments.getChildAt(i));
         for (int i = 0; i < embeds.getChildCount(); i++) oldMedia.add(embeds.getChildAt(i));
+        for (int i = 0; i < linkPreviews.getChildCount(); i++) oldMedia.add(linkPreviews.getChildAt(i));
         attachments.removeAllViews();
         if (msg.attachments != null) {
             for (Message.Attachment a : msg.attachments) {
@@ -162,6 +166,11 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
             for (Embed e : msg.embeds) {
                 if (e != null && !EmbedViewFactory.duplicatesAttachment(e, msg.attachments)) add(embeds, adapter.embedView(e, msg, root));
             }
+        }
+
+        linkPreviews.removeAllViews();
+        for (View preview : adapter.linkPreviewViews(msg, root)) {
+            if (preview != null) add(linkPreviews, preview);
         }
         for (View old : oldMedia) ImageLoader.cancelTree(old);
     }

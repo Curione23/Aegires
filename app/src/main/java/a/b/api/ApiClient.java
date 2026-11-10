@@ -124,6 +124,21 @@ public class ApiClient {
         get(path, json -> list(json, Message::fromJson, "fetchMessages"), cb);
     }
 
+    public void fetchMessage(String channelId, String messageId, Callback<Message> cb) {
+        get(messagePath(channelId, messageId), json -> Message.fromJson(new JSONObject(json)), cb);
+    }
+
+    public void fetchMessageAround(String channelId, String messageId, Callback<Message> cb) {
+        String path = "/channels/" + enc(channelId) + "/messages?around=" + enc(messageId) + "&limit=3";
+        get(path, json -> {
+            List<Message> messages = list(json, Message::fromJson, "fetchMessageAround");
+            for (Message m : messages) {
+                if (messageId.equals(m.id)) return m;
+            }
+            return null;
+        }, cb);
+    }
+
     public void fetchMentions(Callback<List<MentionItem>> cb) {
         get("/users/@me/mentions?limit=50&roles=true&everyone=true", json -> list(json, MentionItem::fromJson, "fetchMentions"), cb);
     }
