@@ -11,10 +11,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -74,6 +77,20 @@ public class ApiClient {
     public interface Callback<T> {
         void onSuccess(T result);
         void onError(String message);
+    }
+
+    public static final class ThreadPage {
+        public final List<Channel> threads;
+        public final boolean hasMore;
+        public final int nextOffset;
+        public final int totalResults;
+
+        public ThreadPage(List<Channel> threads, boolean hasMore, int nextOffset, int totalResults) {
+            this.threads = threads;
+            this.hasMore = hasMore;
+            this.nextOffset = nextOffset;
+            this.totalResults = totalResults;
+        }
     }
 
     public void setToken(String raw) {
@@ -139,6 +156,212 @@ public class ApiClient {
         }, cb);
     }
 
+    public void fetchForumThreads(String channelId, int offset, String name,
+                                  Callback<ThreadPage> cb) {
+        get(forumSearchPath(channelId, offset, name),
+            json -> parseThreadSearchPage(new JSONObject(json), offset), cb);
+    }
+
+    /**
+     * Pinned threads never auto-archive, so they are always active. User
+     * accounts can't enumerate guild active threads, so walk the active-only
+     * search results from oldest activity upward until the pinned flag is
+     * found. The pinned thread is normally the oldest active thread, so this
+     * usually completes in one request.
+     */
+    public void fetchPinnedForumThread(String guildId, String channelId, Callback<Channel> cb) {
+        if (botAccount && guildId != null) {
+            get("/guilds/" + enc(guildId) + "/threads/active", json -> {
+                List<Channel> active = parseThreads(new JSONObject(json).optJSONArray("threads"));
+                for (Channel thread : active) {
+                    if (thread != null && thread.pinned && channelId.equals(thread.parent_id)) {
+                        return thread;
+                    }
+                }
+                return null;
+            }, new Callback<Channel>() {
+                @Override public void onSuccess(Channel pinned) {
+                    if (pinned != null) cb.onSuccess(pinned);
+                    else scanPinnedForumThread(channelId, 0, cb);
+                }
+
+                @Override public void onError(String message) {
+                    scanPinnedForumThread(channelId, 0, cb);
+                }
+            });
+        } else {
+            scanPinnedForumThread(channelId, 0, cb);
+        }
+    }
+
+    private void scanPinnedForumThread(String channelId, int offset, Callback<Channel> cb) {
+        if (offset > 9975) {
+            cb.onSuccess(null);
+            return;
+        }
+        String path = "/channels/" + enc(channelId) + "/threads/search"
+            + "?archived=false&sort_by=last_message_time&sort_order=asc"
+            + "&limit=25&offset=" + offset;
+        get(path, json -> {
+            ThreadPage page = parseThreadSearchPage(new JSONObject(json), offset);
+            for (Channel thread : page.threads) {
+                if (thread != null && thread.pinned) return new PinnedScan(thread, page);
+            }
+            return new PinnedScan(null, page);
+        }, new Callback<PinnedScan>() {
+            @Override public void onSuccess(PinnedScan result) {
+                if (result == null) {
+                    cb.onSuccess(null);
+                    return;
+                }
+                if (result.pinned != null) {
+                    cb.onSuccess(result.pinned);
+                    return;
+                }
+                ThreadPage page = result.page;
+                if (page == null || !page.hasMore || page.nextOffset <= offset) {
+                    cb.onSuccess(null);
+                    return;
+                }
+                scanPinnedForumThread(channelId, page.nextOffset, cb);
+            }
+
+            @Override public void onError(String message) {
+                Log.w("ApiClient", "Couldn't find pinned forum thread: " + message);
+                cb.onSuccess(null);
+            }
+        });
+    }
+
+    private static String forumSearchPath(String channelId, int offset, String name) {
+        String path = "/channels/" + enc(channelId) + "/threads/search"
+            + "?sort_by=last_message_time&sort_order=desc&limit=25&offset=" + offset;
+        if (name != null && !name.isEmpty()) {
+            path += "&name=" + enc(name.length() > 100 ? name.substring(0, 100) : name);
+        }
+        return path;
+    }
+
+    private static final class PinnedScan {
+        final Channel pinned;
+        final ThreadPage page;
+
+        PinnedScan(Channel pinned, ThreadPage page) {
+            this.pinned = pinned;
+            this.page = page;
+        }
+    }
+
+    public void createForumThread(String channelId, String name, String content,
+                                  List<String> tagIds, Callback<Channel> cb) {
+        async("POST forum thread", () -> {
+            JSONObject message = new JSONObject().put("content", content);
+            JSONArray tags = new JSONArray();
+            if (tagIds != null) {
+                for (String tagId : tagIds) {
+                    if (tagId != null && !tagId.isEmpty()) tags.put(tagId);
+                }
+            }
+            JSONObject payload = new JSONObject()
+                .put("name", name)
+                .put("auto_archive_duration", 1440)
+                .put("message", message);
+            if (tags.length() > 0) payload.put("applied_tags", tags);
+            String json = request("POST", "/channels/" + enc(channelId) + "/threads", payload.toString());
+            return parseThread(new JSONObject(json));
+        }, cb);
+    }
+
+    private static List<Channel> parseThreads(JSONArray arr) {
+        List<Channel> threads = new ArrayList<>();
+        if (arr == null) return threads;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o == null) continue;
+            Channel thread = parseThread(o);
+            if (thread != null) threads.add(thread);
+        }
+        return threads;
+    }
+
+    private static ThreadPage parseThreadSearchPage(JSONObject response, int offset) throws IOException {
+        if (!response.has("threads") && response.has("retry_after")) {
+            throw new IOException("Thread search index is still loading; try again");
+        }
+        JSONArray arr = response.optJSONArray("threads");
+        List<Channel> threads = parseThreads(arr);
+        boolean hasMore = response.optBoolean("has_more", false) && !threads.isEmpty();
+        int totalResults = response.optInt("total_results", -1);
+        return new ThreadPage(threads, hasMore, offset + (arr == null ? 0 : arr.length()), totalResults);
+    }
+
+    private static Channel parseThread(JSONObject o) {
+        if (o == null) return null;
+        int type = o.optInt("type", 11);
+        if (type != 11 && type != 12) return null;
+        String id = o.optString("id", null);
+        if (id == null || id.isEmpty()) return null;
+        String name = o.optString("name", "thread");
+        String parent = o.isNull("parent_id") ? null : o.optString("parent_id", null);
+        Channel thread = new Channel(id, name, type, parent);
+        thread.ownerId = str(o, "owner_id");
+        thread.lastMessageId = str(o, "last_message_id");
+        thread.lastActivity = snowflakeMillis(thread.lastMessageId);
+        thread.messageCount = o.optInt("message_count", 0);
+        thread.memberCount = o.optInt("member_count", 0);
+        thread.totalMessageSent = o.optInt("total_message_sent", thread.messageCount);
+        thread.pinned = (o.optInt("flags", 0) & 2) != 0;
+
+        JSONObject metadata = o.optJSONObject("thread_metadata");
+        if (metadata != null) {
+            thread.archived = metadata.optBoolean("archived", false);
+            thread.locked = metadata.optBoolean("locked", false);
+            thread.archiveTimestamp = isoTimestamp(metadata.optString("archive_timestamp", null));
+        }
+
+        JSONArray appliedTags = o.optJSONArray("applied_tags");
+        if (appliedTags != null) {
+            for (int i = 0; i < appliedTags.length(); i++) {
+                String tagId = appliedTags.optString(i, null);
+                if (tagId != null && !tagId.isEmpty()) thread.appliedTagIds.add(tagId);
+            }
+        }
+        return thread;
+    }
+
+    private static void parseForumTags(JSONObject channel, Channel out) {
+        JSONArray tags = channel.optJSONArray("available_tags");
+        if (tags == null) return;
+        for (int i = 0; i < tags.length(); i++) {
+            JSONObject tag = tags.optJSONObject(i);
+            if (tag == null) continue;
+            String id = str(tag, "id");
+            if (id == null || id.isEmpty()) continue;
+            out.availableTags.add(new Channel.ForumTag(
+                id,
+                tag.optString("name", "tag"),
+                tag.optInt("color", 0),
+                tag.optBoolean("moderated", false)));
+        }
+    }
+
+    private static long snowflakeMillis(String id) {
+        try { return (Long.parseLong(id) >> 22) + 1420070400000L; }
+        catch (Exception ignored) { return 0L; }
+    }
+
+    private static long isoTimestamp(String value) {
+        if (value == null || value.isEmpty()) return 0L;
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
+            format.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = format.parse(value);
+            return date == null ? 0L : date.getTime();
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
     public void fetchMentions(Callback<List<MentionItem>> cb) {
         get("/users/@me/mentions?limit=50&roles=true&everyone=true", json -> list(json, MentionItem::fromJson, "fetchMentions"), cb);
     }
@@ -149,6 +372,15 @@ public class ApiClient {
 
     public void fetchChannelName(String channelId, Callback<String> cb) {
         get("/channels/" + enc(channelId), json -> str(new JSONObject(json), "name"), cb);
+    }
+
+    public void fetchMyChannelPermissions(String channelId, Callback<Long> cb) {
+        if (userId == null) {
+            cb.onError("Not signed in");
+            return;
+        }
+        get("/channels/" + enc(channelId) + "/permissions/member/" + enc(userId),
+            json -> Long.parseLong(new JSONObject(json).optString("permissions", "0")), cb);
     }
 
     public void fetchRoles(String guildId, Callback<Map<String, Role>> cb) {
@@ -187,6 +419,11 @@ public class ApiClient {
                 if (userId == null || !PermissionUtil.canViewChannel(o, guildId, userId, memberRoles, rolePerms, isOwner)) return null;
                 Channel ch = new Channel(o.getString("id"), o.getString("name"), o.getInt("type"), o.isNull("parent_id") ? null : o.getString("parent_id"));
                 ch.position = o.optInt("position", 0);
+                ch.topic = str(o, "topic");
+                ch.nsfw = o.optBoolean("nsfw", false);
+                ch.requireTag = (o.optInt("flags", 0) & 16) != 0;
+                ch.canCreateThreads = PermissionUtil.canCreateThreads(o, guildId, userId, memberRoles, rolePerms, isOwner);
+                parseForumTags(o, ch);
                 manageMessagesCache.put(ch.id, PermissionUtil.canManageMessages(o, guildId, userId, memberRoles, rolePerms, isOwner));
                 return ch;
             }, "fetchChannels");

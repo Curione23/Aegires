@@ -8,8 +8,12 @@ import java.util.Map;
 
 public final class PermissionUtil {
     public static final long VIEW_CHANNEL = 1L << 10;
+    public static final long SEND_MESSAGES = 1L << 11;
     public static final long MANAGE_MESSAGES = 1L << 13;
+    public static final long CREATE_PUBLIC_THREADS = 1L << 34;
     public static final long ADMINISTRATOR = 1L << 3;
+    private static final int GUILD_FORUM = 15;
+    private static final int GUILD_MEDIA = 16;
     private static final int OVERWRITE_ROLE = 0;
     private static final int OVERWRITE_MEMBER = 1;
 
@@ -35,6 +39,17 @@ public final class PermissionUtil {
 
     public static boolean canManageMessages(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
         return (computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner) & MANAGE_MESSAGES) != 0;
+    }
+
+    public static boolean canCreateThreads(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
+        long permissions = computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner);
+        int type = channelJson.optInt("type", 0);
+        if (type == GUILD_FORUM || type == GUILD_MEDIA) {
+            // Forum/media thread creation is gated by SEND_MESSAGES;
+            // CREATE_PUBLIC_THREADS is ignored for these channel types.
+            return (permissions & SEND_MESSAGES) != 0;
+        }
+        return (permissions & CREATE_PUBLIC_THREADS) != 0;
     }
 
     private static long computePermissions(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {

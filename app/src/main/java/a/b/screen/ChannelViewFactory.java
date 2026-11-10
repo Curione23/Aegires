@@ -131,7 +131,9 @@ final class ChannelViewFactory {
             row.setClickable(true);
             row.setBackground(Ui.ripple(null, 0));
             row.setOnClickListener(v -> {
-                if (activity != null) activity.navigate(new MessageListScreen(guildId, ch.id));
+                if (activity == null) return;
+                if (ch.type == 15 || ch.type == 16) activity.navigate(new ForumThreadListScreen(guildId, ch));
+                else activity.navigate(new MessageListScreen(guildId, ch.id));
             });
         } else {
             row.setAlpha(0.5f);
@@ -149,6 +151,7 @@ final class ChannelViewFactory {
             case 12: return "\u21B3";
             case 13: return "\uD83C\uDF99";
             case 15: return "\uD83D\uDDC4";
+            case 16: return "\uD83D\uDDBC";
             default: return "#";
         }
     }

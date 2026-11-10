@@ -70,5 +70,8 @@ final class ChannelTreeBuilder {
     }
 
     static boolean isVoiceLike(int type) { return type == 2 || type == 13; }
-    static boolean isOpenable(int type) { return type == 0 || type == 2 || type == 5 || type == 13; }
+    static boolean isOpenable(int type) {
+        return type == 0 || type == 2 || type == 5 || type == 10 || type == 11 || type == 12
+            || type == 13 || type == 15 || type == 16;
+    }
 }
