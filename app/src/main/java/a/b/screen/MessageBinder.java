@@ -25,8 +25,8 @@ final class MessageBinder {
 
     void bindHeader(MessageViewHolder h, Message msg, boolean show) {
         h.header.setVisibility(show ? View.VISIBLE : View.GONE);
-        h.avatar.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
-        ViewGroup.LayoutParams alp = h.avatar.getLayoutParams();
+        h.avatarWrap.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        ViewGroup.LayoutParams alp = h.avatarWrap.getLayoutParams();
         if (alp instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) alp;
             int wantH = show ? adapter.avatarSize : 0;
@@ -34,11 +34,12 @@ final class MessageBinder {
             if (mlp.height != wantH || mlp.topMargin != wantTop) {
                 mlp.height = wantH;
                 mlp.topMargin = wantTop;
-                h.avatar.setLayoutParams(mlp);
+                h.avatarWrap.setLayoutParams(mlp);
             }
         }
         h.root.setPadding(adapter.dp(12), show ? adapter.dp(10) : 0, adapter.dp(12), adapter.dp(2));
         if (!show) return;
+        
         h.name.setText(displayName(msg));
         h.name.setTextColor(getAuthorColor(msg));
 
@@ -46,10 +47,14 @@ final class MessageBinder {
         h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
 
         String uid = msg.author != null ? msg.author.id : null;
-        boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
+        boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null
+            && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
             
-        h.avatar.setBackground(Ui.oval(hasAvatar ? MessageAdapter.BG : Ui.avatarColor(uid)));
-        h.avatar.setClipToOutline(true);
+        h.avatarWrap.setBackground(Ui.oval(hasAvatar ? MessageAdapter.BG : Ui.avatarColor(uid)));
+        h.avatarWrap.setClipToOutline(true);
+
+        h.avatarIcon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
+        h.avatar.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
         
         if (adapter.imageLoader != null) {
             if (hasAvatar) {
@@ -60,7 +65,7 @@ final class MessageBinder {
         }
         
         View.OnClickListener open = v -> openProfile(uid);
-        h.avatar.setOnClickListener(open);
+        h.avatarWrap.setOnClickListener(open);
         h.name.setOnClickListener(open);
     }
 

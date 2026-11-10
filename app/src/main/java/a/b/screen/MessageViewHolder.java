@@ -7,6 +7,7 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -31,7 +32,8 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
 
     private final MessageAdapter adapter;
     final LinearLayout root, header, body, attachments, embeds;
-    final ImageView avatar;
+    final FrameLayout avatarWrap;
+    final ImageView avatar, avatarIcon;
     final TextView name, time, reply, content;
     Message msg;
 
@@ -45,11 +47,18 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         root.setPadding(adapter.dp(12), adapter.dp(10), adapter.dp(12), 0);
         root.setOnLongClickListener(this);
 
+        avatarWrap = new FrameLayout(context);
+        avatarWrap.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
+        avatarWrap.setClipToOutline(true);
+        root.addView(avatarWrap, lp(adapter.avatarSize, adapter.avatarSize, 0, adapter.dp(2), adapter.dp(12), 0));
+
+        avatarIcon = Ui.iconView(context, Ui.I_USER, Color.WHITE, 24);
+        avatarIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        avatarWrap.addView(avatarIcon, new FrameLayout.LayoutParams(-1, -1));
+
         avatar = new ImageView(context);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        avatar.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
-        avatar.setClipToOutline(true);
-        root.addView(avatar, lp(adapter.avatarSize, adapter.avatarSize, 0, adapter.dp(2), adapter.dp(12), 0));
+        avatarWrap.addView(avatar, new FrameLayout.LayoutParams(-1, -1));
 
         body = new LinearLayout(context);
         body.setOrientation(VERTICAL);

@@ -39,12 +39,12 @@ final class ChannelViewFactory {
         wrap.setClipToOutline(true);
 
         String name = guild.name == null ? "" : guild.name.trim();
-        TextView initial = Ui.text(activity,
-            name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
-            Color.WHITE, 14);
+        TextView initial = Ui.text(activity, name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US), Color.WHITE, 14);
         initial.setTypeface(null, Typeface.BOLD);
         initial.setGravity(Gravity.CENTER);
+        initial.setVisibility(hasIcon ? View.GONE : View.VISIBLE); // Hide placeholder if icon exists
         wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
+    
         if (hasIcon && activity != null && activity.imageLoader != null) {
             ImageView icon = new ImageView(activity);
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
