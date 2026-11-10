@@ -1,18 +1,20 @@
 package a.b.screen;
 
+import a.b.model.Channel;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import a.b.model.Channel;
 
 /** Groups a flat channel list into categories + uncategorized, in render order. */
 final class ChannelTreeBuilder {
     static final class CategoryGroup {
         final Channel category;
         final List<Channel> children;
+
         CategoryGroup(Channel category, List<Channel> children) {
             this.category = category;
             this.children = children;
@@ -22,18 +24,21 @@ final class ChannelTreeBuilder {
     static final class Result {
         final List<Channel> uncategorized;
         final List<CategoryGroup> categories;
+
         Result(List<Channel> uncategorized, List<CategoryGroup> categories) {
             this.uncategorized = uncategorized;
             this.categories = categories;
         }
     }
 
-    static final Comparator<Channel> POSITION_COMPARATOR = (a, b) -> Integer.compare(a.position, b.position);
-    static final Comparator<Channel> CHANNEL_COMPARATOR = (a, b) -> {
-        int ag = isVoiceLike(a.type) ? 1 : 0, bg = isVoiceLike(b.type) ? 1 : 0;
-        if (ag != bg) return ag - bg;
-        return Integer.compare(a.position, b.position);
-    };
+    static final Comparator<Channel> POSITION_COMPARATOR =
+            (a, b) -> Integer.compare(a.position, b.position);
+    static final Comparator<Channel> CHANNEL_COMPARATOR =
+            (a, b) -> {
+                int ag = isVoiceLike(a.type) ? 1 : 0, bg = isVoiceLike(b.type) ? 1 : 0;
+                if (ag != bg) return ag - bg;
+                return Integer.compare(a.position, b.position);
+            };
 
     static Result build(List<Channel> all) {
         if (all == null || all.isEmpty()) {
@@ -51,7 +56,11 @@ final class ChannelTreeBuilder {
         for (Channel ch : all) {
             if (ch == null || ch.type == 4) continue;
             String parent = ch.parent_id;
-            boolean hasParent = parent != null && parent.length() > 0 && !"null".equals(parent) && children.containsKey(parent);
+            boolean hasParent =
+                    parent != null
+                            && parent.length() > 0
+                            && !"null".equals(parent)
+                            && children.containsKey(parent);
             if (!hasParent) uncategorized.add(ch);
             else children.get(parent).add(ch);
         }
@@ -69,9 +78,19 @@ final class ChannelTreeBuilder {
         return new Result(uncategorized, groups);
     }
 
-    static boolean isVoiceLike(int type) { return type == 2 || type == 13; }
+    static boolean isVoiceLike(int type) {
+        return type == 2 || type == 13;
+    }
+
     static boolean isOpenable(int type) {
-        return type == 0 || type == 2 || type == 5 || type == 10 || type == 11 || type == 12
-            || type == 13 || type == 15 || type == 16;
+        return type == 0
+                || type == 2
+                || type == 5
+                || type == 10
+                || type == 11
+                || type == 12
+                || type == 13
+                || type == 15
+                || type == 16;
     }
 }

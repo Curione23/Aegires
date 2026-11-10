@@ -8,7 +8,10 @@ public class Guild {
     public boolean owner;
 
     public Guild(String id, String name, String icon, String banner, boolean owner) {
-        this.id = id; this.name = name; this.icon = icon; this.banner = banner;
+        this.id = id;
+        this.name = name;
+        this.icon = icon;
+        this.banner = banner;
         this.owner = owner;
     }
 }

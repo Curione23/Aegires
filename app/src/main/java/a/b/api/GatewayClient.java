@@ -1,28 +1,32 @@
 package a.b.api;
 
 import android.os.Handler;
-import android.util.Log;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import java.io.ByteArrayOutputStream;
-import java.util.Objects;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.zip.DataFormatException;
-import java.util.zip.Inflater;
+
 import a.b.util.SuperProperties;
+
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
+
 import okio.ByteString;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
 
 public class GatewayClient extends WebSocketListener {
     private static final String TAG = "GatewayClient";
-    private static final String DEFAULT_URL = "wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream";
+    private static final String DEFAULT_URL =
+            "wss://gateway.discord.gg/?v=10&encoding=json&compress=zlib-stream";
     private static final int CAPABILITIES = 1734653;
     private static final int OP_DISPATCH = 0;
     private static final int OP_HEARTBEAT = 1;
@@ -38,7 +42,9 @@ public class GatewayClient extends WebSocketListener {
 
     public interface Listener {
         void onReady(JSONObject readyPayload);
+
         void onDispatch(String eventType, JSONObject data);
+
         void onDisconnected(String reason);
     }
 
@@ -51,8 +57,9 @@ public class GatewayClient extends WebSocketListener {
     private final int intents;
     private final Handler handler;
     private final Listener listener;
-    private final OkHttpClient httpClient = new OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build();
-    
+    private final OkHttpClient httpClient =
+            new OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build();
+
     private volatile boolean shouldConnect;
     private volatile boolean running;
     private volatile WebSocket webSocket;
@@ -68,8 +75,10 @@ public class GatewayClient extends WebSocketListener {
     private volatile String subscribedGuild, subscribedChannel;
     private volatile String pendingGuild, pendingChannel;
     private volatile String currentGuildId;
-    private final java.util.Set<String> activeChannels = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    private final java.util.concurrent.atomic.AtomicInteger socketGen = new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.Set<String> activeChannels =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    private final java.util.concurrent.atomic.AtomicInteger socketGen =
+            new java.util.concurrent.atomic.AtomicInteger();
     private final Runnable reconnectRunnable = this::doConnect;
 
     public GatewayClient(String rawToken, int intents, Handler handler, Listener listener) {
@@ -107,19 +116,52 @@ public class GatewayClient extends WebSocketListener {
         stopHeartbeat();
         WebSocket old = webSocket;
         final int gen = socketGen.incrementAndGet();
-        if (old != null) { try { old.cancel(); } catch (Exception ignored) {} }
+        if (old != null) {
+            try {
+                old.cancel();
+            } catch (Exception ignored) {
+            }
+        }
         String url = (resumeUrl != null) ? resumeUrl : DEFAULT_URL;
-        Request request = new Request.Builder().url(url)
-            .header("User-Agent", SuperProperties.USER_AGENT)
-            .header("X-Super-Properties", SuperProperties.getBase64()).build();
-        webSocket = httpClient.newWebSocket(request, new WebSocketListener() {
-            private boolean live() { return gen == socketGen.get(); }
-            @Override public void onOpen(WebSocket ws, Response r) { if (live()) GatewayClient.this.onOpen(ws, r); }
-            @Override public void onMessage(WebSocket ws, String t) { if (live()) GatewayClient.this.onMessage(ws, t); }
-            @Override public void onMessage(WebSocket ws, ByteString b) { if (live()) GatewayClient.this.onMessage(ws, b); }
-            @Override public void onClosing(WebSocket ws, int c, String r) { if (live()) GatewayClient.this.onClosing(ws, c, r); }
-            @Override public void onFailure(WebSocket ws, Throwable t, Response r) { if (live()) GatewayClient.this.onFailure(ws, t, r); }
-        });
+        Request request =
+                new Request.Builder()
+                        .url(url)
+                        .header("User-Agent", SuperProperties.USER_AGENT)
+                        .header("X-Super-Properties", SuperProperties.getBase64())
+                        .build();
+        webSocket =
+                httpClient.newWebSocket(
+                        request,
+                        new WebSocketListener() {
+                            private boolean live() {
+                                return gen == socketGen.get();
+                            }
+
+                            @Override
+                            public void onOpen(WebSocket ws, Response r) {
+                                if (live()) GatewayClient.this.onOpen(ws, r);
+                            }
+
+                            @Override
+                            public void onMessage(WebSocket ws, String t) {
+                                if (live()) GatewayClient.this.onMessage(ws, t);
+                            }
+
+                            @Override
+                            public void onMessage(WebSocket ws, ByteString b) {
+                                if (live()) GatewayClient.this.onMessage(ws, b);
+                            }
+
+                            @Override
+                            public void onClosing(WebSocket ws, int c, String r) {
+                                if (live()) GatewayClient.this.onClosing(ws, c, r);
+                            }
+
+                            @Override
+                            public void onFailure(WebSocket ws, Throwable t, Response r) {
+                                if (live()) GatewayClient.this.onFailure(ws, t, r);
+                            }
+                        });
     }
 
     private void scheduleReconnect(String reason) {
@@ -133,12 +175,15 @@ public class GatewayClient extends WebSocketListener {
 
     public void subscribeToGuild(String guildId, String channelId) {
         if (guildId != null) currentGuildId = guildId;
-        
+
         if (channelId != null) {
             activeChannels.add(channelId);
             if (activeChannels.size() > 10) {
                 java.util.Iterator<String> it = activeChannels.iterator();
-                if (it.hasNext()) { it.next(); it.remove(); }
+                if (it.hasNext()) {
+                    it.next();
+                    it.remove();
+                }
             }
         }
 
@@ -153,9 +198,22 @@ public class GatewayClient extends WebSocketListener {
             for (String ch : activeChannels) {
                 channelsPayload.put(ch, new JSONArray().put(new JSONArray().put(0).put(99)));
             }
-        } catch (JSONException ignored) {}
+        } catch (JSONException ignored) {
+        }
 
-        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "channels", channelsPayload));
+        send(
+                OP_GUILD_SUBSCRIBE,
+                obj(
+                        "guild_id",
+                        guildId,
+                        "typing",
+                        true,
+                        "activities",
+                        true,
+                        "threads",
+                        true,
+                        "channels",
+                        channelsPayload));
         subscribedGuild = guildId;
         subscribedChannel = channelId;
     }
@@ -169,7 +227,19 @@ public class GatewayClient extends WebSocketListener {
         if (startIndex == 0) starts.add(200);
         JSONArray ranges = new JSONArray();
         for (int s : starts) ranges.put(new JSONArray().put(s).put(s + 99));
-        send(OP_GUILD_SUBSCRIBE, obj("guild_id", guildId, "typing", true, "activities", true, "threads", true, "members", obj(channelId, ranges)));
+        send(
+                OP_GUILD_SUBSCRIBE,
+                obj(
+                        "guild_id",
+                        guildId,
+                        "typing",
+                        true,
+                        "activities",
+                        true,
+                        "threads",
+                        true,
+                        "members",
+                        obj(channelId, ranges)));
         return true;
     }
 
@@ -178,11 +248,18 @@ public class GatewayClient extends WebSocketListener {
         subscribedChannel = null;
     }
 
-    @Override public void onOpen(WebSocket webSocket, Response response) { attempt = 0; }
+    @Override
+    public void onOpen(WebSocket webSocket, Response response) {
+        attempt = 0;
+    }
 
-    @Override public void onMessage(WebSocket webSocket, String text) { handlePayload(text); }
+    @Override
+    public void onMessage(WebSocket webSocket, String text) {
+        handlePayload(text);
+    }
 
-    @Override public void onMessage(WebSocket webSocket, ByteString bytes) {
+    @Override
+    public void onMessage(WebSocket webSocket, ByteString bytes) {
         try {
             String json = zlib.feed(bytes.toByteArray());
             if (json != null) handlePayload(json);
@@ -191,19 +268,24 @@ public class GatewayClient extends WebSocketListener {
         }
     }
 
-    @Override public void onClosing(WebSocket webSocket, int code, String reason) {
+    @Override
+    public void onClosing(WebSocket webSocket, int code, String reason) {
         webSocket.close(1000, null);
         onDisconnected("closed (" + code + ")");
     }
 
-    @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+    @Override
+    public void onFailure(WebSocket webSocket, Throwable t, Response response) {
         String msg = t.getMessage() != null ? t.getMessage() : t.toString();
         onDisconnected("failure: " + msg);
     }
 
     private void closeAndReconnect(WebSocket ws, String reason) {
         if (ws != null) {
-            try { ws.close(4000, reason); } catch (Exception ignored) {}
+            try {
+                ws.close(4000, reason);
+            } catch (Exception ignored) {
+            }
         }
         onDisconnected(reason);
     }
@@ -221,8 +303,12 @@ public class GatewayClient extends WebSocketListener {
             JSONObject p = new JSONObject(raw);
             JSONObject d = p.optJSONObject("d");
             switch (p.optInt("op", -1)) {
-                case OP_HELLO: onHello(d); break;
-                case OP_HEARTBEAT: sendHeartbeat(); break;
+                case OP_HELLO:
+                    onHello(d);
+                    break;
+                case OP_HEARTBEAT:
+                    sendHeartbeat();
+                    break;
                 case OP_HEARTBEAT_ACK:
                     heartbeatAcked = true;
                     long sent = heartbeatSentNanos;
@@ -230,27 +316,59 @@ public class GatewayClient extends WebSocketListener {
                         heartbeatSentNanos = 0L;
                     }
                     break;
-                case OP_RECONNECT: closeAndReconnect(webSocket, "op7 reconnect"); break;
+                case OP_RECONNECT:
+                    closeAndReconnect(webSocket, "op7 reconnect");
+                    break;
                 case OP_INVALID_SESSION:
                     if (!p.optBoolean("d", false)) dropSession();
                     closeAndReconnect(webSocket, "op9 invalid session");
                     break;
-                case OP_DISPATCH: onDispatch(p, d); break;
+                case OP_DISPATCH:
+                    onDispatch(p, d);
+                    break;
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private void onHello(JSONObject d) {
-        long interval = d != null ? d.optLong("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL_MS) : DEFAULT_HEARTBEAT_INTERVAL_MS;
+        long interval =
+                d != null
+                        ? d.optLong("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL_MS)
+                        : DEFAULT_HEARTBEAT_INTERVAL_MS;
         startHeartbeat(interval);
         if (sessionId != null && lastSeq >= 0) {
             send(OP_RESUME, obj("token", token, "session_id", sessionId, "seq", lastSeq));
         } else {
-            JSONObject props = obj("os", "Android", "browser", "Discord Android", "device", "Discord Android",
-                "system_locale", "en-US", "client_version", SuperProperties.CLIENT_VERSION,
-                "release_channel", "google-play", "client_build_number", SuperProperties.CLIENT_BUILD);
-            send(OP_IDENTIFY, obj("token", token, "intents", intents, "properties", props, "capabilities", CAPABILITIES,
-                "client_state", obj("guild_versions", new JSONObject(), "api_code_version", 0)));
+            JSONObject props =
+                    obj(
+                            "os",
+                            "Android",
+                            "browser",
+                            "Discord Android",
+                            "device",
+                            "Discord Android",
+                            "system_locale",
+                            "en-US",
+                            "client_version",
+                            SuperProperties.CLIENT_VERSION,
+                            "release_channel",
+                            "google-play",
+                            "client_build_number",
+                            SuperProperties.CLIENT_BUILD);
+            send(
+                    OP_IDENTIFY,
+                    obj(
+                            "token",
+                            token,
+                            "intents",
+                            intents,
+                            "properties",
+                            props,
+                            "capabilities",
+                            CAPABILITIES,
+                            "client_state",
+                            obj("guild_versions", new JSONObject(), "api_code_version", 0)));
         }
     }
 
@@ -261,18 +379,21 @@ public class GatewayClient extends WebSocketListener {
         if (isReady || "RESUMED".equals(type)) {
             if (isReady && d != null) {
                 if (!d.isNull("session_id")) sessionId = d.optString("session_id");
-                if (!d.isNull("resume_gateway_url")) resumeUrl = d.optString("resume_gateway_url") + "/?v=10&encoding=json&compress=zlib-stream";
+                if (!d.isNull("resume_gateway_url"))
+                    resumeUrl =
+                            d.optString("resume_gateway_url")
+                                    + "/?v=10&encoding=json&compress=zlib-stream";
             }
             resetSubscriptionCache();
             ready = true;
             attempt = 0;
-            
+
             if (currentGuildId != null) {
                 subscribeToGuild(currentGuildId, subscribedChannel);
             } else if (pendingGuild != null) {
                 subscribeToGuild(pendingGuild, pendingChannel);
             }
-            
+
             handler.post(() -> listener.onReady(d));
         }
         handler.post(() -> listener.onDispatch(type, d));
@@ -296,15 +417,19 @@ public class GatewayClient extends WebSocketListener {
         ScheduledExecutorService ex = Executors.newSingleThreadScheduledExecutor();
         heartbeat = ex;
         long jitter = (long) (intervalMs * Math.random());
-        ex.scheduleWithFixedDelay(() -> {
-            if (!running) return;
-            if (!heartbeatAcked) {
-                closeAndReconnect(webSocket, "heartbeat timeout");
-                return;
-            }
-            heartbeatAcked = false;
-            sendHeartbeat();
-        }, jitter, intervalMs, TimeUnit.MILLISECONDS);
+        ex.scheduleWithFixedDelay(
+                () -> {
+                    if (!running) return;
+                    if (!heartbeatAcked) {
+                        closeAndReconnect(webSocket, "heartbeat timeout");
+                        return;
+                    }
+                    heartbeatAcked = false;
+                    sendHeartbeat();
+                },
+                jitter,
+                intervalMs,
+                TimeUnit.MILLISECONDS);
     }
 
     private void stopHeartbeat() {
@@ -323,7 +448,8 @@ public class GatewayClient extends WebSocketListener {
     private static JSONObject obj(Object... keyValues) {
         JSONObject o = new JSONObject();
         try {
-            for (int i = 0; i < keyValues.length; i += 2) o.put((String) keyValues[i], keyValues[i + 1]);
+            for (int i = 0; i < keyValues.length; i += 2)
+                o.put((String) keyValues[i], keyValues[i + 1]);
         } catch (JSONException e) {
             throw new IllegalArgumentException(e);
         }
@@ -344,14 +470,18 @@ public class GatewayClient extends WebSocketListener {
                 tail = (tail << 8) | (chunk[i] & 0xFF);
             }
             if (tail != 0x0000FFFF) return null;
-            String json = new String(decoded.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            String json =
+                    new String(decoded.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
             decoded.reset();
             tail = 0;
             return json;
         }
 
         void end() {
-            try { inflater.reset(); } catch (Exception ignored) {}
+            try {
+                inflater.reset();
+            } catch (Exception ignored) {
+            }
             decoded.reset();
             tail = 0;
         }

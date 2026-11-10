@@ -1,8 +1,10 @@
 package a.b.screen;
 
 import android.os.Handler;
+
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import a.b.MainActivity;
 import a.b.util.MemberListStore;
 
@@ -21,7 +23,12 @@ final class MemberRangeLoader {
     private long lastRequestAt;
     private boolean released;
 
-    MemberRangeLoader(MainActivity activity, String guildId, String channelId, RecyclerView list, Handler ui) {
+    MemberRangeLoader(
+            MainActivity activity,
+            String guildId,
+            String channelId,
+            RecyclerView list,
+            Handler ui) {
         this.activity = activity;
         this.guildId = guildId;
         this.channelId = channelId;
@@ -67,13 +74,16 @@ final class MemberRangeLoader {
 
         int missing = -1;
         for (int i = from; i <= to; i++) {
-            if (store == null || store.get(i) == null) { missing = i; break; }
+            if (store == null || store.get(i) == null) {
+                missing = i;
+                break;
+            }
         }
 
         if (missing >= 0) {
             int block = missing / BLOCK;
             long now = System.currentTimeMillis();
-            
+
             if (now - lastRequestAt >= COOLDOWN_MS) {
                 if (activity.gateway.requestMemberRanges(guildId, channelId, block * BLOCK)) {
                     lastBlock = block;

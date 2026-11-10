@@ -6,16 +6,17 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import a.b.model.Embed;
+import a.b.model.EmbedField;
+import a.b.model.Message;
+import a.b.util.MediaCache;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import a.b.model.Embed;
-import a.b.model.EmbedField;
-import a.b.model.Message;
-import a.b.util.MediaCache;
-import a.b.util.Ui;
 
 /** Builds Discord-style embed cards. */
 final class EmbedViewFactory {
@@ -43,7 +44,8 @@ final class EmbedViewFactory {
         box.setBackground(bg);
         box.setClipToOutline(true);
         if (title) {
-            TextView t = text(adapter.renderer.render(e.title, msg, false), MessageAdapter.LINK_FG, 14);
+            TextView t =
+                    text(adapter.renderer.render(e.title, msg, false), MessageAdapter.LINK_FG, 14);
             t.setTypeface(null, Typeface.BOLD);
             box.addView(t);
         }
@@ -86,7 +88,10 @@ final class EmbedViewFactory {
             boolean own = e.videoWidth > 0 && e.videoHeight > 0;
             w = own ? e.videoWidth : e.thumbnailWidth;
             h = own ? e.videoHeight : e.thumbnailHeight;
-            preview = isReal(e.thumbnailUrl) ? e.thumbnailUrl : isReal(e.imageUrl) ? e.imageUrl : null;
+            preview =
+                    isReal(e.thumbnailUrl)
+                            ? e.thumbnailUrl
+                            : isReal(e.imageUrl) ? e.imageUrl : null;
         } else if (isReal(e.imageUrl)) {
             preview = e.imageUrl;
             w = e.imageWidth;
@@ -99,8 +104,12 @@ final class EmbedViewFactory {
             return null;
         }
         int[] sz = adapter.mediaFactory.size(parent, null, w, h, video);
-        return adapter.mediaFactory.media(MediaCache.previewUrl(preview, null, sz[0], sz[1]),
-            video, video ? e.videoUrl : preview, video, sz);
+        return adapter.mediaFactory.media(
+                MediaCache.previewUrl(preview, null, sz[0], sz[1]),
+                video,
+                video ? e.videoUrl : preview,
+                video,
+                sz);
     }
 
     static boolean duplicatesAttachment(Embed e, List<Message.Attachment> atts) {
@@ -114,11 +123,12 @@ final class EmbedViewFactory {
             if (a.filename != null) filenames.add(a.filename);
         }
         return refs(e.thumbnailUrl, e.thumbnailProxyUrl, ids, filenames)
-            || refs(e.imageUrl, e.imageProxyUrl, ids, filenames)
-            || refs(e.videoUrl, e.videoProxyUrl, ids, filenames);
+                || refs(e.imageUrl, e.imageProxyUrl, ids, filenames)
+                || refs(e.videoUrl, e.videoProxyUrl, ids, filenames);
     }
 
-    private static boolean refs(String url, String proxyUrl, Set<String> ids, Set<String> filenames) {
+    private static boolean refs(
+            String url, String proxyUrl, Set<String> ids, Set<String> filenames) {
         if (url != null && url.startsWith(ATTACHMENT_SCHEME)) {
             String target = url.substring(ATTACHMENT_SCHEME.length());
             int q = target.indexOf('?');
@@ -157,5 +167,7 @@ final class EmbedViewFactory {
         return p;
     }
 
-    private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
+    private static boolean isReal(String s) {
+        return s != null && !s.isEmpty() && !"null".equals(s);
+    }
 }

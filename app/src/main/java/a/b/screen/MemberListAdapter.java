@@ -11,7 +11,9 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import androidx.recyclerview.widget.RecyclerView;
+
 import a.b.MainActivity;
 import a.b.util.MemberListStore.Entry;
 import a.b.util.Ui;
@@ -34,12 +36,14 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         activity = null;
     }
 
-    @Override public int getItemCount() {
+    @Override
+    public int getItemCount() {
         if (activity == null || !guildId.equals(activity.memberList.guildId())) return 0;
         return activity.memberList.total();
     }
 
-    @Override public long getItemId(int position) {
+    @Override
+    public long getItemId(int position) {
         Entry e = entryAt(position);
         if (e == null) return -position;
         if (e.group) return e.groupId != null ? e.groupId.hashCode() : -position;
@@ -47,20 +51,23 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         return -position;
     }
 
-    @Override public int getItemViewType(int pos) {
+    @Override
+    public int getItemViewType(int pos) {
         Entry e = entryAt(pos);
         if (e == null) return TYPE_PLACEHOLDER;
         return e.group ? TYPE_GROUP : TYPE_MEMBER;
     }
 
-    @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
+    @Override
+    public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
         Context c = parent.getContext();
         if (type == TYPE_GROUP) return new GroupHolder(c);
         if (type == TYPE_MEMBER) return new MemberHolder(c);
         return new PlaceholderHolder(c);
     }
 
-    @Override public void onBindViewHolder(RecyclerView.ViewHolder h, int pos) {
+    @Override
+    public void onBindViewHolder(RecyclerView.ViewHolder h, int pos) {
         Entry e = entryAt(pos);
         if (h instanceof GroupHolder && e != null) ((GroupHolder) h).bind(e);
         else if (h instanceof MemberHolder && e != null) ((MemberHolder) h).bind(e);
@@ -73,6 +80,7 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
 
     final class GroupHolder extends RecyclerView.ViewHolder {
         final TextView title;
+
         GroupHolder(Context c) {
             super(new TextView(c));
             title = (TextView) itemView;
@@ -85,6 +93,7 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             title.setPadding(Ui.dp(c, 16), Ui.dp(c, 18), Ui.dp(c, 16), Ui.dp(c, 6));
             title.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
         }
+
         void bind(Entry e) {
             if (activity == null) return;
             title.setText(MemberPresentation.groupTitle(activity, e));
@@ -109,16 +118,17 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             row.setBackground(Ui.ripple(null, 0));
 
             FrameLayout holder = new FrameLayout(c);
-            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
+            LinearLayout.LayoutParams hlp =
+                    new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
             hlp.setMarginEnd(Ui.dp(c, 12));
 
             avatarWrap = new FrameLayout(c);
             avatarWrap.setClipToOutline(true);
-            
+
             icon = Ui.iconView(c, Ui.I_USER, Color.WHITE, 24);
             icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             avatarWrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
-            
+
             avatar = new ImageView(c);
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
             avatarWrap.addView(avatar, new FrameLayout.LayoutParams(-1, -1));
@@ -129,7 +139,10 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             ring.setPadding(Ui.dp(c, 3), Ui.dp(c, 3), Ui.dp(c, 3), Ui.dp(c, 3));
             dot = new View(c);
             ring.addView(dot, new FrameLayout.LayoutParams(-1, -1));
-            holder.addView(ring, new FrameLayout.LayoutParams(Ui.dp(c, 16), Ui.dp(c, 16), Gravity.BOTTOM | Gravity.END));
+            holder.addView(
+                    ring,
+                    new FrameLayout.LayoutParams(
+                            Ui.dp(c, 16), Ui.dp(c, 16), Gravity.BOTTOM | Gravity.END));
             row.addView(holder, hlp);
 
             name = Ui.text(c, "", Ui.TEXT_HEADER, 16);
@@ -156,21 +169,29 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             dot.setBackground(Ui.oval(MemberPresentation.statusColor(e.status)));
 
             boolean hasAvatar = Ui.isReal(e.avatar) && e.userId != null;
-            
+
             avatarWrap.setBackground(Ui.oval(hasAvatar ? PAGE_BG : Ui.avatarColor(e.userId)));
 
             icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
             avatar.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
 
             if (hasAvatar) {
-                activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + e.userId + "/" + e.avatar + ".png?size=64", avatar);
+                activity.imageLoader.load(
+                        "https://cdn.discordapp.com/avatars/"
+                                + e.userId
+                                + "/"
+                                + e.avatar
+                                + ".png?size=64",
+                        avatar);
             } else {
-                avatar.setImageDrawable(null); 
+                avatar.setImageDrawable(null);
             }
 
-            itemView.setOnClickListener(v -> {
-                if (activity != null && e.userId != null) activity.navigate(new ProfileScreen(e.userId, guildId));
-            });
+            itemView.setOnClickListener(
+                    v -> {
+                        if (activity != null && e.userId != null)
+                            activity.navigate(new ProfileScreen(e.userId, guildId));
+                    });
         }
     }
 
@@ -183,7 +204,8 @@ final class MemberListAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             row.setPadding(Ui.dp(c, 16), 0, Ui.dp(c, 16), 0);
             View circle = new View(c);
             circle.setBackground(Ui.oval(Ui.BG_INPUT));
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
+            LinearLayout.LayoutParams clp =
+                    new LinearLayout.LayoutParams(Ui.dp(c, 40), Ui.dp(c, 40));
             clp.setMarginEnd(Ui.dp(c, 12));
             row.addView(circle, clp);
             View bar = new View(c);

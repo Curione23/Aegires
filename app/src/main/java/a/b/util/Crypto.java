@@ -1,6 +1,7 @@
 package a.b.util;
 
 import android.util.Base64;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +12,7 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.text.Normalizer;
 import java.util.Arrays;
+
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
@@ -20,11 +22,11 @@ import javax.crypto.spec.SecretKeySpec;
 /**
  * End-to-end encryption for messages and attachments.
  *
- * Password -> Argon2id -> 256-bit key (kept in memory only).
- * Every message/file then gets its own key and nonce from HKDF-SHA256(master, random salt,
- * context), where the context binds the preset, channel and sender. Messages are padded,
- * never compressed, and authenticated together with their header and context, so a ciphertext
- * cannot be moved to another channel or replayed under another author.
+ * <p>Password -> Argon2id -> 256-bit key (kept in memory only). Every message/file then gets its
+ * own key and nonce from HKDF-SHA256(master, random salt, context), where the context binds the
+ * preset, channel and sender. Messages are padded, never compressed, and authenticated together
+ * with their header and context, so a ciphertext cannot be moved to another channel or replayed
+ * under another author.
  */
 public final class Crypto {
 
@@ -48,7 +50,9 @@ public final class Crypto {
             this.padBlock = padBlock;
         }
 
-        public int tagBits() { return tagBytes * 8; }
+        public int tagBits() {
+            return tagBytes * 8;
+        }
 
         public static Preset fromIndex(int i) {
             for (Preset p : values()) if (p.index == i) return p;
@@ -69,7 +73,8 @@ public final class Crypto {
 
     private static final int ARGON_PASSES = 3;
     private static final int ARGON_MEMORY_KIB = 64 * 1024;
-    private static final byte[] USER_KEY_SALT = "dcenc2|user-key|v1".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] USER_KEY_SALT =
+            "dcenc2|user-key|v1".getBytes(StandardCharsets.UTF_8);
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -95,7 +100,9 @@ public final class Crypto {
         if (password == null || password.isEmpty()) return null;
         byte[] pw = null;
         try {
-            pw = Normalizer.normalize(password, Normalizer.Form.NFKC).getBytes(StandardCharsets.UTF_8);
+            pw =
+                    Normalizer.normalize(password, Normalizer.Form.NFKC)
+                            .getBytes(StandardCharsets.UTF_8);
             byte[] master = Argon2id.hash(pw, salt, ARGON_PASSES, ARGON_MEMORY_KIB, MASTER_LEN);
             SecretKey key = new SecretKeySpec(master, "HKDF");
             Arrays.fill(master, (byte) 0);
@@ -132,14 +139,20 @@ public final class Crypto {
 
     // ----------------------------------------------------------------- messages
 
-    public static String encrypt(String plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
-        if (plaintext == null || master == null || preset == null || channelId == null || senderId == null) return null;
+    public static String encrypt(
+            String plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
+        if (plaintext == null
+                || master == null
+                || preset == null
+                || channelId == null
+                || senderId == null) return null;
         byte[] data = null, payload = null, prk = null, okm = null, aad = null;
         try {
             data = plaintext.getBytes(StandardCharsets.UTF_8);
             if (data.length > maxPlaintextBytes(preset)) return null;
 
-            int padded = ((data.length + 1 + preset.padBlock - 1) / preset.padBlock) * preset.padBlock;
+            int padded =
+                    ((data.length + 1 + preset.padBlock - 1) / preset.padBlock) * preset.padBlock;
             payload = new byte[padded];
             System.arraycopy(data, 0, payload, 0, data.length);
             payload[data.length] = (byte) 0x80;
@@ -153,8 +166,16 @@ public final class Crypto {
             okm = hkdfExpand(prk, info, preset.keyBytes + NONCE_LEN);
             aad = aad(header, salt, info);
 
-            byte[] ct = gcm(true, Arrays.copyOfRange(okm, 0, preset.keyBytes),
-                Arrays.copyOfRange(okm, preset.keyBytes, okm.length), preset.tagBits(), aad, payload, 0, payload.length);
+            byte[] ct =
+                    gcm(
+                            true,
+                            Arrays.copyOfRange(okm, 0, preset.keyBytes),
+                            Arrays.copyOfRange(okm, preset.keyBytes, okm.length),
+                            preset.tagBits(),
+                            aad,
+                            payload,
+                            0,
+                            payload.length);
 
             byte[] wire = new byte[1 + SALT_LEN + ct.length];
             wire[0] = header;
@@ -169,7 +190,8 @@ public final class Crypto {
     }
 
     public static String decrypt(String wire, SecretKey master, String channelId, String senderId) {
-        if (!looksEncrypted(wire) || master == null || channelId == null || senderId == null) return null;
+        if (!looksEncrypted(wire) || master == null || channelId == null || senderId == null)
+            return null;
         byte[] prk = null, okm = null, payload = null;
         try {
             byte[] raw = Base64.decode(wire.substring(PREFIX.length()), Base64.NO_WRAP);
@@ -180,7 +202,8 @@ public final class Crypto {
             if (preset == null) return null;
 
             int ctLen = raw.length - 1 - SALT_LEN;
-            if (ctLen < preset.tagBytes + preset.padBlock || (ctLen - preset.tagBytes) % preset.padBlock != 0) return null;
+            if (ctLen < preset.tagBytes + preset.padBlock
+                    || (ctLen - preset.tagBytes) % preset.padBlock != 0) return null;
 
             byte[] salt = Arrays.copyOfRange(raw, 1, 1 + SALT_LEN);
             byte[] info = info("msg", preset, channelId, senderId);
@@ -188,8 +211,16 @@ public final class Crypto {
             okm = hkdfExpand(prk, info, preset.keyBytes + NONCE_LEN);
             byte[] aad = aad((byte) header, salt, info);
 
-            payload = gcm(false, Arrays.copyOfRange(okm, 0, preset.keyBytes),
-                Arrays.copyOfRange(okm, preset.keyBytes, okm.length), preset.tagBits(), aad, raw, 1 + SALT_LEN, ctLen);
+            payload =
+                    gcm(
+                            false,
+                            Arrays.copyOfRange(okm, 0, preset.keyBytes),
+                            Arrays.copyOfRange(okm, preset.keyBytes, okm.length),
+                            preset.tagBits(),
+                            aad,
+                            raw,
+                            1 + SALT_LEN,
+                            ctLen);
 
             int end = payload.length;
             while (end > 0 && payload[end - 1] == 0) end--;
@@ -208,9 +239,19 @@ public final class Crypto {
      * Streams plaintext in as 64 KiB chunks, each authenticated on its own. Chunks carry a counter
      * and a final-chunk flag in their nonce, so reordering, dropping or truncating is detected.
      */
-    public static boolean encryptStream(InputStream in, OutputStream out, SecretKey master, Preset preset,
-                                        String channelId, String senderId) {
-        if (in == null || out == null || master == null || preset == null || channelId == null || senderId == null) return false;
+    public static boolean encryptStream(
+            InputStream in,
+            OutputStream out,
+            SecretKey master,
+            Preset preset,
+            String channelId,
+            String senderId) {
+        if (in == null
+                || out == null
+                || master == null
+                || preset == null
+                || channelId == null
+                || senderId == null) return false;
         byte[] prk = null, okm = null;
         try {
             byte header = (byte) ((VERSION_FILE << 4) | preset.index);
@@ -232,9 +273,20 @@ public final class Crypto {
             while (true) {
                 int nextLen = curLen == FILE_CHUNK ? readFully(in, next) : 0;
                 boolean last = nextLen == 0;
-                out.write(gcm(true, key, chunkNonce(noncePrefix, counter, last), preset.tagBits(), aad, cur, 0, curLen));
+                out.write(
+                        gcm(
+                                true,
+                                key,
+                                chunkNonce(noncePrefix, counter, last),
+                                preset.tagBits(),
+                                aad,
+                                cur,
+                                0,
+                                curLen));
                 if (last) break;
-                byte[] t = cur; cur = next; next = t;
+                byte[] t = cur;
+                cur = next;
+                next = t;
                 curLen = nextLen;
                 if (++counter >= 0xFFFFFFFFL) return false;
             }
@@ -249,8 +301,10 @@ public final class Crypto {
     }
 
     /** Output is written chunk by chunk, but only after that chunk has been authenticated. */
-    public static boolean decryptStream(InputStream in, OutputStream out, SecretKey master, String channelId, String senderId) {
-        if (in == null || out == null || master == null || channelId == null || senderId == null) return false;
+    public static boolean decryptStream(
+            InputStream in, OutputStream out, SecretKey master, String channelId, String senderId) {
+        if (in == null || out == null || master == null || channelId == null || senderId == null)
+            return false;
         byte[] prk = null, okm = null;
         try {
             int header = in.read();
@@ -275,9 +329,20 @@ public final class Crypto {
             while (true) {
                 int nextLen = curLen == chunkCt ? readFully(in, next) : 0;
                 boolean last = nextLen == 0;
-                out.write(gcm(false, key, chunkNonce(noncePrefix, counter, last), preset.tagBits(), aad, cur, 0, curLen));
+                out.write(
+                        gcm(
+                                false,
+                                key,
+                                chunkNonce(noncePrefix, counter, last),
+                                preset.tagBits(),
+                                aad,
+                                cur,
+                                0,
+                                curLen));
                 if (last) break;
-                byte[] t = cur; cur = next; next = t;
+                byte[] t = cur;
+                cur = next;
+                next = t;
                 curLen = nextLen;
                 if (++counter >= 0xFFFFFFFFL) return false;
             }
@@ -291,16 +356,28 @@ public final class Crypto {
         }
     }
 
-    public static byte[] encryptBytes(byte[] plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
+    public static byte[] encryptBytes(
+            byte[] plaintext, SecretKey master, Preset preset, String channelId, String senderId) {
         if (plaintext == null) return null;
         ByteArrayOutputStream out = new ByteArrayOutputStream(plaintext.length + 64);
-        return encryptStream(new ByteArrayInputStream(plaintext), out, master, preset, channelId, senderId) ? out.toByteArray() : null;
+        return encryptStream(
+                        new ByteArrayInputStream(plaintext),
+                        out,
+                        master,
+                        preset,
+                        channelId,
+                        senderId)
+                ? out.toByteArray()
+                : null;
     }
 
-    public static byte[] decryptBytes(byte[] wire, SecretKey master, String channelId, String senderId) {
+    public static byte[] decryptBytes(
+            byte[] wire, SecretKey master, String channelId, String senderId) {
         if (wire == null) return null;
         ByteArrayOutputStream out = new ByteArrayOutputStream(wire.length);
-        return decryptStream(new ByteArrayInputStream(wire), out, master, channelId, senderId) ? out.toByteArray() : null;
+        return decryptStream(new ByteArrayInputStream(wire), out, master, channelId, senderId)
+                ? out.toByteArray()
+                : null;
     }
 
     // ------------------------------------------------------------------ helpers
@@ -326,11 +403,21 @@ public final class Crypto {
         return n;
     }
 
-    private static byte[] gcm(boolean encrypt, byte[] key, byte[] nonce, int tagBits, byte[] aad,
-                              byte[] data, int off, int len) throws GeneralSecurityException {
+    private static byte[] gcm(
+            boolean encrypt,
+            byte[] key,
+            byte[] nonce,
+            int tagBits,
+            byte[] aad,
+            byte[] data,
+            int off,
+            int len)
+            throws GeneralSecurityException {
         Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
-        c.init(encrypt ? Cipher.ENCRYPT_MODE : Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"),
-            new GCMParameterSpec(tagBits, nonce));
+        c.init(
+                encrypt ? Cipher.ENCRYPT_MODE : Cipher.DECRYPT_MODE,
+                new SecretKeySpec(key, "AES"),
+                new GCMParameterSpec(tagBits, nonce));
         c.updateAAD(aad);
         return c.doFinal(data, off, len);
     }
@@ -374,12 +461,13 @@ public final class Crypto {
         }
     }
 
-    private static byte[] hkdfExpand(byte[] prk, byte[] info, int length) throws GeneralSecurityException {
+    private static byte[] hkdfExpand(byte[] prk, byte[] info, int length)
+            throws GeneralSecurityException {
         byte[] out = new byte[length];
         byte[] t = new byte[0];
         int pos = 0;
         for (int i = 1; pos < length; i++) {
-            t = hmac(prk, t, info, new byte[]{(byte) i});
+            t = hmac(prk, t, info, new byte[] {(byte) i});
             int n = Math.min(t.length, length - pos);
             System.arraycopy(t, 0, out, pos, n);
             pos += n;

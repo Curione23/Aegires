@@ -6,9 +6,29 @@ import android.net.Uri;
 import android.os.Handler;
 import android.provider.OpenableColumns;
 import android.util.Log;
+
+import a.b.model.Channel;
+import a.b.model.DiscordUser;
+import a.b.model.DmChannel;
+import a.b.model.Guild;
+import a.b.model.GuildInfo;
+import a.b.model.MentionItem;
+import a.b.model.Message;
+import a.b.model.Role;
+import a.b.util.PermissionUtil;
+import a.b.util.SuperProperties;
+
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
@@ -25,22 +45,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import a.b.model.Channel;
-import a.b.model.DiscordUser;
-import a.b.model.DmChannel;
-import a.b.model.Guild;
-import a.b.model.GuildInfo;
-import a.b.model.MentionItem;
-import a.b.model.Message;
-import a.b.model.Role;
-import a.b.util.PermissionUtil;
-import a.b.util.SuperProperties;
-import okhttp3.MediaType;
-import okhttp3.MultipartBody;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 
 public class ApiClient {
     private static final String TAG = "ApiClient";
@@ -48,26 +52,34 @@ public class ApiClient {
     private static final long MAX_UPLOAD_BYTES = 25L * 1024 * 1024;
     private static final long MAX_RETRY_WAIT_MS = 5000;
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-    
+
     private volatile String token;
     private volatile String gatewayToken;
     private volatile String userId;
     private volatile boolean botAccount;
     private final Handler handler;
     private final AtomicInteger requestGeneration = new AtomicInteger();
-    public final Map<String, Boolean> manageMessagesCache = new java.util.concurrent.ConcurrentHashMap<>();
-    
-    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(
-        4, 4, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
-            Thread t = new Thread(r, "api-http");
-            t.setDaemon(true);
-            return t;
-        });
-    
-    private final OkHttpClient httpClient = new OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build();
+    public final Map<String, Boolean> manageMessagesCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private final ThreadPoolExecutor executor =
+            new ThreadPoolExecutor(
+                    4,
+                    4,
+                    30,
+                    TimeUnit.SECONDS,
+                    new LinkedBlockingQueue<>(),
+                    r -> {
+                        Thread t = new Thread(r, "api-http");
+                        t.setDaemon(true);
+                        return t;
+                    });
+
+    private final OkHttpClient httpClient =
+            new OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(20, TimeUnit.SECONDS)
+                    .build();
 
     public ApiClient(Handler handler) {
         this.handler = handler;
@@ -76,6 +88,7 @@ public class ApiClient {
 
     public interface Callback<T> {
         void onSuccess(T result);
+
         void onError(String message);
     }
 
@@ -85,7 +98,8 @@ public class ApiClient {
         public final int nextOffset;
         public final int totalResults;
 
-        public ThreadPage(List<Channel> threads, boolean hasMore, int nextOffset, int totalResults) {
+        public ThreadPage(
+                List<Channel> threads, boolean hasMore, int nextOffset, int totalResults) {
             this.threads = threads;
             this.hasMore = hasMore;
             this.nextOffset = nextOffset;
@@ -102,42 +116,86 @@ public class ApiClient {
         userId = PermissionUtil.getUserIdFromToken(gatewayToken);
     }
 
-    public boolean isBotAccount() { return botAccount; }
-    public String getGatewayToken() { return gatewayToken; }
+    public boolean isBotAccount() {
+        return botAccount;
+    }
+
+    public String getGatewayToken() {
+        return gatewayToken;
+    }
+
     public GatewayClient createGateway(int intents, GatewayClient.Listener listener) {
         return new GatewayClient(gatewayToken, intents, handler, listener);
     }
-    public int newRequestGeneration() { return requestGeneration.incrementAndGet(); }
-    public int currentRequestGeneration() { return requestGeneration.get(); }
-    public void shutdown() { executor.shutdownNow(); }
+
+    public int newRequestGeneration() {
+        return requestGeneration.incrementAndGet();
+    }
+
+    public int currentRequestGeneration() {
+        return requestGeneration.get();
+    }
+
+    public void shutdown() {
+        executor.shutdownNow();
+    }
 
     public void fetchGuilds(Callback<List<Guild>> cb) {
-        get("/users/@me/guilds", json -> list(json, o -> new Guild(
-            o.getString("id"), o.getString("name"), str(o, "icon"), str(o, "banner"),
-            o.optBoolean("owner", false)), "fetchGuilds"), cb);
+        get(
+                "/users/@me/guilds",
+                json ->
+                        list(
+                                json,
+                                o ->
+                                        new Guild(
+                                                o.getString("id"),
+                                                o.getString("name"),
+                                                str(o, "icon"),
+                                                str(o, "banner"),
+                                                o.optBoolean("owner", false)),
+                                "fetchGuilds"),
+                cb);
     }
 
     public void fetchDms(Callback<List<DmChannel>> cb) {
-        get("/users/@me/channels", json -> list(json, o -> {
-            DmChannel d = DmChannel.fromJson(o);
-            return d.type == DmChannel.TYPE_DM || d.type == DmChannel.TYPE_GROUP ? d : null;
-        }, "fetchDms"), cb);
+        get(
+                "/users/@me/channels",
+                json ->
+                        list(
+                                json,
+                                o -> {
+                                    DmChannel d = DmChannel.fromJson(o);
+                                    return d.type == DmChannel.TYPE_DM
+                                                    || d.type == DmChannel.TYPE_GROUP
+                                            ? d
+                                            : null;
+                                },
+                                "fetchDms"),
+                cb);
     }
 
     public void fetchGuildInfo(String guildId, Callback<GuildInfo> cb) {
-        get("/guilds/" + enc(guildId) + "?with_counts=true", json -> {
-            JSONObject o = new JSONObject(json);
-            GuildInfo info = new GuildInfo();
-            info.memberCount = o.optInt("approximate_member_count", 0);
-            info.onlineCount = o.optInt("approximate_presence_count", 0);
-            return info;
-        }, cb);
+        get(
+                "/guilds/" + enc(guildId) + "?with_counts=true",
+                json -> {
+                    JSONObject o = new JSONObject(json);
+                    GuildInfo info = new GuildInfo();
+                    info.memberCount = o.optInt("approximate_member_count", 0);
+                    info.onlineCount = o.optInt("approximate_presence_count", 0);
+                    return info;
+                },
+                cb);
     }
 
-    public void fetchMessages(String channelId, String before, String after, int limit, Callback<List<Message>> cb) {
-        String path = "/channels/" + enc(channelId) + "/messages?limit=" + limit +
-            (before != null ? "&before=" + enc(before) : "") +
-            (after != null ? "&after=" + enc(after) : "");
+    public void fetchMessages(
+            String channelId, String before, String after, int limit, Callback<List<Message>> cb) {
+        String path =
+                "/channels/"
+                        + enc(channelId)
+                        + "/messages?limit="
+                        + limit
+                        + (before != null ? "&before=" + enc(before) : "")
+                        + (after != null ? "&after=" + enc(after) : "");
         get(path, json -> list(json, Message::fromJson, "fetchMessages"), cb);
     }
 
@@ -146,49 +204,62 @@ public class ApiClient {
     }
 
     public void fetchMessageAround(String channelId, String messageId, Callback<Message> cb) {
-        String path = "/channels/" + enc(channelId) + "/messages?around=" + enc(messageId) + "&limit=3";
-        get(path, json -> {
-            List<Message> messages = list(json, Message::fromJson, "fetchMessageAround");
-            for (Message m : messages) {
-                if (messageId.equals(m.id)) return m;
-            }
-            return null;
-        }, cb);
+        String path =
+                "/channels/" + enc(channelId) + "/messages?around=" + enc(messageId) + "&limit=3";
+        get(
+                path,
+                json -> {
+                    List<Message> messages = list(json, Message::fromJson, "fetchMessageAround");
+                    for (Message m : messages) {
+                        if (messageId.equals(m.id)) return m;
+                    }
+                    return null;
+                },
+                cb);
     }
 
-    public void fetchForumThreads(String channelId, int offset, String name,
-                                  Callback<ThreadPage> cb) {
-        get(forumSearchPath(channelId, offset, name),
-            json -> parseThreadSearchPage(new JSONObject(json), offset), cb);
+    public void fetchForumThreads(
+            String channelId, int offset, String name, Callback<ThreadPage> cb) {
+        get(
+                forumSearchPath(channelId, offset, name),
+                json -> parseThreadSearchPage(new JSONObject(json), offset),
+                cb);
     }
 
     /**
-     * Pinned threads never auto-archive, so they are always active. User
-     * accounts can't enumerate guild active threads, so walk the active-only
-     * search results from oldest activity upward until the pinned flag is
-     * found. The pinned thread is normally the oldest active thread, so this
-     * usually completes in one request.
+     * Pinned threads never auto-archive, so they are always active. User accounts can't enumerate
+     * guild active threads, so walk the active-only search results from oldest activity upward
+     * until the pinned flag is found. The pinned thread is normally the oldest active thread, so
+     * this usually completes in one request.
      */
     public void fetchPinnedForumThread(String guildId, String channelId, Callback<Channel> cb) {
         if (botAccount && guildId != null) {
-            get("/guilds/" + enc(guildId) + "/threads/active", json -> {
-                List<Channel> active = parseThreads(new JSONObject(json).optJSONArray("threads"));
-                for (Channel thread : active) {
-                    if (thread != null && thread.pinned && channelId.equals(thread.parent_id)) {
-                        return thread;
-                    }
-                }
-                return null;
-            }, new Callback<Channel>() {
-                @Override public void onSuccess(Channel pinned) {
-                    if (pinned != null) cb.onSuccess(pinned);
-                    else scanPinnedForumThread(channelId, 0, cb);
-                }
+            get(
+                    "/guilds/" + enc(guildId) + "/threads/active",
+                    json -> {
+                        List<Channel> active =
+                                parseThreads(new JSONObject(json).optJSONArray("threads"));
+                        for (Channel thread : active) {
+                            if (thread != null
+                                    && thread.pinned
+                                    && channelId.equals(thread.parent_id)) {
+                                return thread;
+                            }
+                        }
+                        return null;
+                    },
+                    new Callback<Channel>() {
+                        @Override
+                        public void onSuccess(Channel pinned) {
+                            if (pinned != null) cb.onSuccess(pinned);
+                            else scanPinnedForumThread(channelId, 0, cb);
+                        }
 
-                @Override public void onError(String message) {
-                    scanPinnedForumThread(channelId, 0, cb);
-                }
-            });
+                        @Override
+                        public void onError(String message) {
+                            scanPinnedForumThread(channelId, 0, cb);
+                        }
+                    });
         } else {
             scanPinnedForumThread(channelId, 0, cb);
         }
@@ -199,43 +270,56 @@ public class ApiClient {
             cb.onSuccess(null);
             return;
         }
-        String path = "/channels/" + enc(channelId) + "/threads/search"
-            + "?archived=false&sort_by=last_message_time&sort_order=asc"
-            + "&limit=25&offset=" + offset;
-        get(path, json -> {
-            ThreadPage page = parseThreadSearchPage(new JSONObject(json), offset);
-            for (Channel thread : page.threads) {
-                if (thread != null && thread.pinned) return new PinnedScan(thread, page);
-            }
-            return new PinnedScan(null, page);
-        }, new Callback<PinnedScan>() {
-            @Override public void onSuccess(PinnedScan result) {
-                if (result == null) {
-                    cb.onSuccess(null);
-                    return;
-                }
-                if (result.pinned != null) {
-                    cb.onSuccess(result.pinned);
-                    return;
-                }
-                ThreadPage page = result.page;
-                if (page == null || !page.hasMore || page.nextOffset <= offset) {
-                    cb.onSuccess(null);
-                    return;
-                }
-                scanPinnedForumThread(channelId, page.nextOffset, cb);
-            }
+        String path =
+                "/channels/"
+                        + enc(channelId)
+                        + "/threads/search"
+                        + "?archived=false&sort_by=last_message_time&sort_order=asc"
+                        + "&limit=25&offset="
+                        + offset;
+        get(
+                path,
+                json -> {
+                    ThreadPage page = parseThreadSearchPage(new JSONObject(json), offset);
+                    for (Channel thread : page.threads) {
+                        if (thread != null && thread.pinned) return new PinnedScan(thread, page);
+                    }
+                    return new PinnedScan(null, page);
+                },
+                new Callback<PinnedScan>() {
+                    @Override
+                    public void onSuccess(PinnedScan result) {
+                        if (result == null) {
+                            cb.onSuccess(null);
+                            return;
+                        }
+                        if (result.pinned != null) {
+                            cb.onSuccess(result.pinned);
+                            return;
+                        }
+                        ThreadPage page = result.page;
+                        if (page == null || !page.hasMore || page.nextOffset <= offset) {
+                            cb.onSuccess(null);
+                            return;
+                        }
+                        scanPinnedForumThread(channelId, page.nextOffset, cb);
+                    }
 
-            @Override public void onError(String message) {
-                Log.w("ApiClient", "Couldn't find pinned forum thread: " + message);
-                cb.onSuccess(null);
-            }
-        });
+                    @Override
+                    public void onError(String message) {
+                        Log.w("ApiClient", "Couldn't find pinned forum thread: " + message);
+                        cb.onSuccess(null);
+                    }
+                });
     }
 
     private static String forumSearchPath(String channelId, int offset, String name) {
-        String path = "/channels/" + enc(channelId) + "/threads/search"
-            + "?sort_by=last_message_time&sort_order=desc&limit=25&offset=" + offset;
+        String path =
+                "/channels/"
+                        + enc(channelId)
+                        + "/threads/search"
+                        + "?sort_by=last_message_time&sort_order=desc&limit=25&offset="
+                        + offset;
         if (name != null && !name.isEmpty()) {
             path += "&name=" + enc(name.length() > 100 ? name.substring(0, 100) : name);
         }
@@ -252,24 +336,36 @@ public class ApiClient {
         }
     }
 
-    public void createForumThread(String channelId, String name, String content,
-                                  List<String> tagIds, Callback<Channel> cb) {
-        async("POST forum thread", () -> {
-            JSONObject message = new JSONObject().put("content", content);
-            JSONArray tags = new JSONArray();
-            if (tagIds != null) {
-                for (String tagId : tagIds) {
-                    if (tagId != null && !tagId.isEmpty()) tags.put(tagId);
-                }
-            }
-            JSONObject payload = new JSONObject()
-                .put("name", name)
-                .put("auto_archive_duration", 1440)
-                .put("message", message);
-            if (tags.length() > 0) payload.put("applied_tags", tags);
-            String json = request("POST", "/channels/" + enc(channelId) + "/threads", payload.toString());
-            return parseThread(new JSONObject(json));
-        }, cb);
+    public void createForumThread(
+            String channelId,
+            String name,
+            String content,
+            List<String> tagIds,
+            Callback<Channel> cb) {
+        async(
+                "POST forum thread",
+                () -> {
+                    JSONObject message = new JSONObject().put("content", content);
+                    JSONArray tags = new JSONArray();
+                    if (tagIds != null) {
+                        for (String tagId : tagIds) {
+                            if (tagId != null && !tagId.isEmpty()) tags.put(tagId);
+                        }
+                    }
+                    JSONObject payload =
+                            new JSONObject()
+                                    .put("name", name)
+                                    .put("auto_archive_duration", 1440)
+                                    .put("message", message);
+                    if (tags.length() > 0) payload.put("applied_tags", tags);
+                    String json =
+                            request(
+                                    "POST",
+                                    "/channels/" + enc(channelId) + "/threads",
+                                    payload.toString());
+                    return parseThread(new JSONObject(json));
+                },
+                cb);
     }
 
     private static List<Channel> parseThreads(JSONArray arr) {
@@ -284,7 +380,8 @@ public class ApiClient {
         return threads;
     }
 
-    private static ThreadPage parseThreadSearchPage(JSONObject response, int offset) throws IOException {
+    private static ThreadPage parseThreadSearchPage(JSONObject response, int offset)
+            throws IOException {
         if (!response.has("threads") && response.has("retry_after")) {
             throw new IOException("Thread search index is still loading; try again");
         }
@@ -292,7 +389,8 @@ public class ApiClient {
         List<Channel> threads = parseThreads(arr);
         boolean hasMore = response.optBoolean("has_more", false) && !threads.isEmpty();
         int totalResults = response.optInt("total_results", -1);
-        return new ThreadPage(threads, hasMore, offset + (arr == null ? 0 : arr.length()), totalResults);
+        return new ThreadPage(
+                threads, hasMore, offset + (arr == null ? 0 : arr.length()), totalResults);
     }
 
     private static Channel parseThread(JSONObject o) {
@@ -337,17 +435,21 @@ public class ApiClient {
             if (tag == null) continue;
             String id = str(tag, "id");
             if (id == null || id.isEmpty()) continue;
-            out.availableTags.add(new Channel.ForumTag(
-                id,
-                tag.optString("name", "tag"),
-                tag.optInt("color", 0),
-                tag.optBoolean("moderated", false)));
+            out.availableTags.add(
+                    new Channel.ForumTag(
+                            id,
+                            tag.optString("name", "tag"),
+                            tag.optInt("color", 0),
+                            tag.optBoolean("moderated", false)));
         }
     }
 
     private static long snowflakeMillis(String id) {
-        try { return (Long.parseLong(id) >> 22) + 1420070400000L; }
-        catch (Exception ignored) { return 0L; }
+        try {
+            return (Long.parseLong(id) >> 22) + 1420070400000L;
+        } catch (Exception ignored) {
+            return 0L;
+        }
     }
 
     private static long isoTimestamp(String value) {
@@ -363,7 +465,10 @@ public class ApiClient {
     }
 
     public void fetchMentions(Callback<List<MentionItem>> cb) {
-        get("/users/@me/mentions?limit=50&roles=true&everyone=true", json -> list(json, MentionItem::fromJson, "fetchMentions"), cb);
+        get(
+                "/users/@me/mentions?limit=50&roles=true&everyone=true",
+                json -> list(json, MentionItem::fromJson, "fetchMentions"),
+                cb);
     }
 
     public void fetchChannelMeta(String channelId, Callback<JSONObject> cb) {
@@ -379,19 +484,35 @@ public class ApiClient {
             cb.onError("Not signed in");
             return;
         }
-        get("/channels/" + enc(channelId) + "/permissions/member/" + enc(userId),
-            json -> Long.parseLong(new JSONObject(json).optString("permissions", "0")), cb);
+        get(
+                "/channels/" + enc(channelId) + "/permissions/member/" + enc(userId),
+                json -> Long.parseLong(new JSONObject(json).optString("permissions", "0")),
+                cb);
     }
 
     public void fetchRoles(String guildId, Callback<Map<String, Role>> cb) {
-        get("/guilds/" + enc(guildId) + "/roles", json -> map(json,
-            o -> new AbstractMap.SimpleEntry<>(o.getString("id"),
-                new Role(o.getString("id"), o.optString("name", "role"), o.optInt("color", 0), o.optInt("position", 0))),
-            "fetchRoles"), cb);
+        get(
+                "/guilds/" + enc(guildId) + "/roles",
+                json ->
+                        map(
+                                json,
+                                o ->
+                                        new AbstractMap.SimpleEntry<>(
+                                                o.getString("id"),
+                                                new Role(
+                                                        o.getString("id"),
+                                                        o.optString("name", "role"),
+                                                        o.optInt("color", 0),
+                                                        o.optInt("position", 0))),
+                                "fetchRoles"),
+                cb);
     }
 
     public void fetchMember(String guildId, String userId, Callback<JSONObject> cb) {
-        get("/guilds/" + enc(guildId) + "/members/" + enc(userId), json -> new JSONObject(json), cb);
+        get(
+                "/guilds/" + enc(guildId) + "/members/" + enc(userId),
+                json -> new JSONObject(json),
+                cb);
     }
 
     public void fetchUserProfile(String id, Callback<DiscordUser> cb) {
@@ -403,37 +524,85 @@ public class ApiClient {
             fetchUserProfile(id, cb);
             return;
         }
-        get("/users/" + enc(id) + "/profile?with_mutual_guilds=true", json -> DiscordUser.fromJson(new JSONObject(json)), new Callback<DiscordUser>() {
-            @Override public void onSuccess(DiscordUser user) { cb.onSuccess(user); }
-            @Override public void onError(String error) { fetchUserProfile(id, cb); }
-        });
+        get(
+                "/users/" + enc(id) + "/profile?with_mutual_guilds=true",
+                json -> DiscordUser.fromJson(new JSONObject(json)),
+                new Callback<DiscordUser>() {
+                    @Override
+                    public void onSuccess(DiscordUser user) {
+                        cb.onSuccess(user);
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        fetchUserProfile(id, cb);
+                    }
+                });
     }
 
     public void fetchChannels(String guildId, boolean isOwner, Callback<List<Channel>> cb) {
         int gen = requestGeneration.get();
-        async("fetchChannels", () -> {
-            List<String> memberRoles = memberRoles(guildId);
-            Map<String, Long> rolePerms = rolePermissions(guildId);
-            String json = request("GET", "/guilds/" + enc(guildId) + "/channels", null);
-            return list(json, o -> {
-                if (userId == null || !PermissionUtil.canViewChannel(o, guildId, userId, memberRoles, rolePerms, isOwner)) return null;
-                Channel ch = new Channel(o.getString("id"), o.getString("name"), o.getInt("type"), o.isNull("parent_id") ? null : o.getString("parent_id"));
-                ch.position = o.optInt("position", 0);
-                ch.topic = str(o, "topic");
-                ch.nsfw = o.optBoolean("nsfw", false);
-                ch.requireTag = (o.optInt("flags", 0) & 16) != 0;
-                ch.canCreateThreads = PermissionUtil.canCreateThreads(o, guildId, userId, memberRoles, rolePerms, isOwner);
-                parseForumTags(o, ch);
-                manageMessagesCache.put(ch.id, PermissionUtil.canManageMessages(o, guildId, userId, memberRoles, rolePerms, isOwner));
-                return ch;
-            }, "fetchChannels");
-        }, ifCurrent(gen, cb));
+        async(
+                "fetchChannels",
+                () -> {
+                    List<String> memberRoles = memberRoles(guildId);
+                    Map<String, Long> rolePerms = rolePermissions(guildId);
+                    String json = request("GET", "/guilds/" + enc(guildId) + "/channels", null);
+                    return list(
+                            json,
+                            o -> {
+                                if (userId == null
+                                        || !PermissionUtil.canViewChannel(
+                                                o,
+                                                guildId,
+                                                userId,
+                                                memberRoles,
+                                                rolePerms,
+                                                isOwner)) return null;
+                                Channel ch =
+                                        new Channel(
+                                                o.getString("id"),
+                                                o.getString("name"),
+                                                o.getInt("type"),
+                                                o.isNull("parent_id")
+                                                        ? null
+                                                        : o.getString("parent_id"));
+                                ch.position = o.optInt("position", 0);
+                                ch.topic = str(o, "topic");
+                                ch.nsfw = o.optBoolean("nsfw", false);
+                                ch.requireTag = (o.optInt("flags", 0) & 16) != 0;
+                                ch.canCreateThreads =
+                                        PermissionUtil.canCreateThreads(
+                                                o,
+                                                guildId,
+                                                userId,
+                                                memberRoles,
+                                                rolePerms,
+                                                isOwner);
+                                parseForumTags(o, ch);
+                                manageMessagesCache.put(
+                                        ch.id,
+                                        PermissionUtil.canManageMessages(
+                                                o,
+                                                guildId,
+                                                userId,
+                                                memberRoles,
+                                                rolePerms,
+                                                isOwner));
+                                return ch;
+                            },
+                            "fetchChannels");
+                },
+                ifCurrent(gen, cb));
     }
 
     private List<String> memberRoles(String guildId) throws IOException {
         try {
             if (botAccount && userId == null) throw new IOException("Bot User ID is null.");
-            String path = botAccount ? "/guilds/" + enc(guildId) + "/members/" + enc(userId) : "/users/@me/guilds/" + enc(guildId) + "/member";
+            String path =
+                    botAccount
+                            ? "/guilds/" + enc(guildId) + "/members/" + enc(userId)
+                            : "/users/@me/guilds/" + enc(guildId) + "/member";
             JSONArray arr = new JSONObject(request("GET", path, null)).optJSONArray("roles");
             List<String> roles = new ArrayList<>();
             for (int i = 0; arr != null && i < arr.length(); i++) roles.add(arr.optString(i));
@@ -445,8 +614,13 @@ public class ApiClient {
 
     private Map<String, Long> rolePermissions(String guildId) throws IOException {
         try {
-            return map(request("GET", "/guilds/" + enc(guildId) + "/roles", null),
-                o -> new AbstractMap.SimpleEntry<>(o.getString("id"), Long.parseLong(o.optString("permissions", "0"))), "fetchGuildRoles");
+            return map(
+                    request("GET", "/guilds/" + enc(guildId) + "/roles", null),
+                    o ->
+                            new AbstractMap.SimpleEntry<>(
+                                    o.getString("id"),
+                                    Long.parseLong(o.optString("permissions", "0"))),
+                    "fetchGuildRoles");
         } catch (Exception e) {
             throw new IOException("Failed to fetch roles: " + e.getMessage(), e);
         }
@@ -460,107 +634,206 @@ public class ApiClient {
         sendMessage(channelId, content, null, null, cb);
     }
 
-    public void sendMessage(String channelId, String content, String replyToMessageId, String replyToGuildId, Callback<Void> cb) {
-        async("POST messages", () -> {
-            JSONObject payload = new JSONObject().put("content", content);
-            if (replyToMessageId != null) {
-                JSONObject ref = new JSONObject().put("message_id", replyToMessageId).put("channel_id", channelId);
-                if (replyToGuildId != null) ref.put("guild_id", replyToGuildId);
-                payload.put("message_reference", ref);
-            }
-            request("POST", "/channels/" + enc(channelId) + "/messages", payload.toString());
-            return null;
-        }, cb);
+    public void sendMessage(
+            String channelId,
+            String content,
+            String replyToMessageId,
+            String replyToGuildId,
+            Callback<Void> cb) {
+        async(
+                "POST messages",
+                () -> {
+                    JSONObject payload = new JSONObject().put("content", content);
+                    if (replyToMessageId != null) {
+                        JSONObject ref =
+                                new JSONObject()
+                                        .put("message_id", replyToMessageId)
+                                        .put("channel_id", channelId);
+                        if (replyToGuildId != null) ref.put("guild_id", replyToGuildId);
+                        payload.put("message_reference", ref);
+                    }
+                    request(
+                            "POST",
+                            "/channels/" + enc(channelId) + "/messages",
+                            payload.toString());
+                    return null;
+                },
+                cb);
     }
 
     public void editMessage(String channelId, String messageId, String content, Callback<Void> cb) {
-        async("PATCH messages", () -> {
-            request("PATCH", messagePath(channelId, messageId), new JSONObject().put("content", content).toString());
-            return null;
-        }, cb);
+        async(
+                "PATCH messages",
+                () -> {
+                    request(
+                            "PATCH",
+                            messagePath(channelId, messageId),
+                            new JSONObject().put("content", content).toString());
+                    return null;
+                },
+                cb);
     }
 
     public void deleteMessage(String channelId, String messageId, Callback<Void> cb) {
-        async("DELETE messages", () -> {
-            request("DELETE", messagePath(channelId, messageId), null);
-            return null;
-        }, cb);
+        async(
+                "DELETE messages",
+                () -> {
+                    request("DELETE", messagePath(channelId, messageId), null);
+                    return null;
+                },
+                cb);
     }
 
-    public void sendFile(Context ctx, String channelId, String content, Uri fileUri, String mimeType, String fileName, Callback<Void> cb) {
-        async("http.UPLOAD", () -> {
-            if (fileSize(ctx, fileUri) > MAX_UPLOAD_BYTES) throw new IOException("File too large (max 25 MB)");
-            RequestBody fileBody = new RequestBody() {
-                @Override public MediaType contentType() { return MediaType.parse(mimeType); }
-                @Override public void writeTo(okio.BufferedSink sink) throws IOException {
-                    try (InputStream in = ctx.getContentResolver().openInputStream(fileUri)) {
-                        if (in == null) throw new IOException("Could not open " + fileUri);
-                        sink.writeAll(okio.Okio.source(in));
+    public void sendFile(
+            Context ctx,
+            String channelId,
+            String content,
+            Uri fileUri,
+            String mimeType,
+            String fileName,
+            Callback<Void> cb) {
+        async(
+                "http.UPLOAD",
+                () -> {
+                    if (fileSize(ctx, fileUri) > MAX_UPLOAD_BYTES)
+                        throw new IOException("File too large (max 25 MB)");
+                    RequestBody fileBody =
+                            new RequestBody() {
+                                @Override
+                                public MediaType contentType() {
+                                    return MediaType.parse(mimeType);
+                                }
+
+                                @Override
+                                public void writeTo(okio.BufferedSink sink) throws IOException {
+                                    try (InputStream in =
+                                            ctx.getContentResolver().openInputStream(fileUri)) {
+                                        if (in == null)
+                                            throw new IOException("Could not open " + fileUri);
+                                        sink.writeAll(okio.Okio.source(in));
+                                    }
+                                }
+                            };
+                    MultipartBody body =
+                            new MultipartBody.Builder()
+                                    .setType(MultipartBody.FORM)
+                                    .addFormDataPart("content", content)
+                                    .addFormDataPart("file", fileName, fileBody)
+                                    .build();
+                    Request request =
+                            new Request.Builder()
+                                    .url(BASE_URL + "/channels/" + enc(channelId) + "/messages")
+                                    .post(body)
+                                    .header("Authorization", token)
+                                    .header("User-Agent", SuperProperties.USER_AGENT)
+                                    .header("X-Super-Properties", SuperProperties.getBase64())
+                                    .build();
+                    try (Response response = httpClient.newCall(request).execute()) {
+                        if (!response.isSuccessful())
+                            throw new IOException("Upload failed: HTTP " + response.code());
                     }
-                }
-            };
-            MultipartBody body = new MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("content", content).addFormDataPart("file", fileName, fileBody).build();
-            Request request = new Request.Builder().url(BASE_URL + "/channels/" + enc(channelId) + "/messages").post(body)
-                .header("Authorization", token).header("User-Agent", SuperProperties.USER_AGENT)
-                .header("X-Super-Properties", SuperProperties.getBase64()).build();
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (!response.isSuccessful()) throw new IOException("Upload failed: HTTP " + response.code());
-            }
-            return null;
-        }, cb);
+                    return null;
+                },
+                cb);
     }
 
-    public void sendEncryptedFile(Context ctx, String channelId, String content, Uri fileUri, String fileName,
-                                  javax.crypto.SecretKey key, a.b.util.Crypto.Preset preset, String senderId, Callback<Void> cb) {
-        async("http.UPLOAD.enc", () -> {
-            if (key == null || preset == null || senderId == null) throw new IOException("Encryption key missing");
-            long size = fileSize(ctx, fileUri);
-            if (size >= 0 && size + a.b.util.Crypto.fileOverhead(preset, size) > MAX_UPLOAD_BYTES) {
-                throw new IOException("File too large for E2EE upload");
-            }
-            RequestBody fileBody = new RequestBody() {
-                @Override public MediaType contentType() { return MediaType.parse("application/octet-stream"); }
-                @Override public void writeTo(okio.BufferedSink sink) throws IOException {
-                    try (InputStream in = ctx.getContentResolver().openInputStream(fileUri)) {
-                        if (in == null) throw new IOException("Could not open " + fileUri);
-                        if (!a.b.util.Crypto.encryptStream(in, sink.outputStream(), key, preset, channelId, senderId)) {
-                            throw new IOException("Encryption failed");
-                        }
+    public void sendEncryptedFile(
+            Context ctx,
+            String channelId,
+            String content,
+            Uri fileUri,
+            String fileName,
+            javax.crypto.SecretKey key,
+            a.b.util.Crypto.Preset preset,
+            String senderId,
+            Callback<Void> cb) {
+        async(
+                "http.UPLOAD.enc",
+                () -> {
+                    if (key == null || preset == null || senderId == null)
+                        throw new IOException("Encryption key missing");
+                    long size = fileSize(ctx, fileUri);
+                    if (size >= 0
+                            && size + a.b.util.Crypto.fileOverhead(preset, size)
+                                    > MAX_UPLOAD_BYTES) {
+                        throw new IOException("File too large for E2EE upload");
                     }
-                }
-            };
-            MultipartBody body = new MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("content", content).addFormDataPart("file", fileName, fileBody).build();
-            Request request = new Request.Builder().url(BASE_URL + "/channels/" + enc(channelId) + "/messages").post(body)
-                .header("Authorization", token).header("User-Agent", SuperProperties.USER_AGENT)
-                .header("X-Super-Properties", SuperProperties.getBase64()).build();
-            try (Response response = httpClient.newCall(request).execute()) {
-                if (!response.isSuccessful()) throw new IOException("Upload failed: HTTP " + response.code());
-            }
-            return null;
-        }, cb);
+                    RequestBody fileBody =
+                            new RequestBody() {
+                                @Override
+                                public MediaType contentType() {
+                                    return MediaType.parse("application/octet-stream");
+                                }
+
+                                @Override
+                                public void writeTo(okio.BufferedSink sink) throws IOException {
+                                    try (InputStream in =
+                                            ctx.getContentResolver().openInputStream(fileUri)) {
+                                        if (in == null)
+                                            throw new IOException("Could not open " + fileUri);
+                                        if (!a.b.util.Crypto.encryptStream(
+                                                in,
+                                                sink.outputStream(),
+                                                key,
+                                                preset,
+                                                channelId,
+                                                senderId)) {
+                                            throw new IOException("Encryption failed");
+                                        }
+                                    }
+                                }
+                            };
+                    MultipartBody body =
+                            new MultipartBody.Builder()
+                                    .setType(MultipartBody.FORM)
+                                    .addFormDataPart("content", content)
+                                    .addFormDataPart("file", fileName, fileBody)
+                                    .build();
+                    Request request =
+                            new Request.Builder()
+                                    .url(BASE_URL + "/channels/" + enc(channelId) + "/messages")
+                                    .post(body)
+                                    .header("Authorization", token)
+                                    .header("User-Agent", SuperProperties.USER_AGENT)
+                                    .header("X-Super-Properties", SuperProperties.getBase64())
+                                    .build();
+                    try (Response response = httpClient.newCall(request).execute()) {
+                        if (!response.isSuccessful())
+                            throw new IOException("Upload failed: HTTP " + response.code());
+                    }
+                    return null;
+                },
+                cb);
     }
 
     private static String messagePath(String channelId, String messageId) {
         return "/channels/" + enc(channelId) + "/messages/" + enc(messageId);
     }
 
-    private interface Task<T> { T run() throws Exception; }
-    private interface Parse<T> { T apply(String json) throws Exception; }
-    private interface Item<T> { T parse(JSONObject o) throws Exception; }
+    private interface Task<T> {
+        T run() throws Exception;
+    }
+
+    private interface Parse<T> {
+        T apply(String json) throws Exception;
+    }
+
+    private interface Item<T> {
+        T parse(JSONObject o) throws Exception;
+    }
 
     private <T> void async(String label, Task<T> task, Callback<T> cb) {
         try {
-            executor.execute(() -> {
-                try {
-                    T result = task.run();
-                    handler.post(() -> cb.onSuccess(result));
-                } catch (Exception e) {
-                    String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                    handler.post(() -> cb.onError(msg));
-                }
-            });
+            executor.execute(
+                    () -> {
+                        try {
+                            T result = task.run();
+                            handler.post(() -> cb.onSuccess(result));
+                        } catch (Exception e) {
+                            String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                            handler.post(() -> cb.onError(msg));
+                        }
+                    });
         } catch (RejectedExecutionException e) {
             handler.post(() -> cb.onError("API client is shut down"));
         }
@@ -568,22 +841,38 @@ public class ApiClient {
 
     private <T> void get(String path, Parse<T> parse, Callback<T> cb) {
         int q = path.indexOf('?');
-        async("GET " + (q >= 0 ? path.substring(0, q) : path), () -> parse.apply(request("GET", path, null)), cb);
+        async(
+                "GET " + (q >= 0 ? path.substring(0, q) : path),
+                () -> parse.apply(request("GET", path, null)),
+                cb);
     }
 
     private <T> Callback<T> ifCurrent(int gen, Callback<T> cb) {
         return new Callback<T>() {
-            @Override public void onSuccess(T result) { if (gen == requestGeneration.get()) cb.onSuccess(result); }
-            @Override public void onError(String message) { if (gen == requestGeneration.get()) cb.onError(message); }
+            @Override
+            public void onSuccess(T result) {
+                if (gen == requestGeneration.get()) cb.onSuccess(result);
+            }
+
+            @Override
+            public void onError(String message) {
+                if (gen == requestGeneration.get()) cb.onError(message);
+            }
         };
     }
 
     private String request(String method, String path, String jsonBody) throws Exception {
         RequestBody body = jsonBody == null ? null : RequestBody.create(jsonBody, JSON);
-        Request.Builder builder = new Request.Builder().url(BASE_URL + path).method(method, body)
-            .header("Authorization", token).header("User-Agent", SuperProperties.USER_AGENT)
-            .header("X-Super-Properties", SuperProperties.getBase64()).header("X-Discord-Locale", "en-US")
-            .header("X-Discord-Timezone", TimeZone.getDefault().getID()).header("Accept-Language", "en-US,en;q=0.9");
+        Request.Builder builder =
+                new Request.Builder()
+                        .url(BASE_URL + path)
+                        .method(method, body)
+                        .header("Authorization", token)
+                        .header("User-Agent", SuperProperties.USER_AGENT)
+                        .header("X-Super-Properties", SuperProperties.getBase64())
+                        .header("X-Discord-Locale", "en-US")
+                        .header("X-Discord-Timezone", TimeZone.getDefault().getID())
+                        .header("Accept-Language", "en-US,en;q=0.9");
         for (int attempt = 0; ; attempt++) {
             try (Response response = httpClient.newCall(builder.build()).execute()) {
                 String respBody = response.body() != null ? response.body().string() : "";
@@ -603,7 +892,10 @@ public class ApiClient {
     private static long parseRetryAfter(Response response) {
         String h = response.header("Retry-After");
         if (h != null) {
-            try { return (long) (Double.parseDouble(h) * 1000); } catch (NumberFormatException ignored) {}
+            try {
+                return (long) (Double.parseDouble(h) * 1000);
+            } catch (NumberFormatException ignored) {
+            }
         }
         return 1000;
     }
@@ -626,14 +918,17 @@ public class ApiClient {
         return out;
     }
 
-    private static <V> Map<String, V> map(String json, Item<Map.Entry<String, V>> item, String label) throws JSONException {
+    private static <V> Map<String, V> map(
+            String json, Item<Map.Entry<String, V>> item, String label) throws JSONException {
         List<Map.Entry<String, V>> entries = list(json, item, label);
         Map<String, V> out = new HashMap<>(entries.size() * 2);
         for (Map.Entry<String, V> e : entries) out.put(e.getKey(), e.getValue());
         return out;
     }
 
-    private static String enc(String s) { return Uri.encode(s); }
+    private static String enc(String s) {
+        return Uri.encode(s);
+    }
 
     private static long fileSize(Context ctx, Uri uri) {
         try (Cursor c = ctx.getContentResolver().query(uri, null, null, null, null)) {
@@ -641,7 +936,8 @@ public class ApiClient {
                 int col = c.getColumnIndex(OpenableColumns.SIZE);
                 if (col >= 0 && !c.isNull(col)) return c.getLong(col);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return -1;
     }
 }

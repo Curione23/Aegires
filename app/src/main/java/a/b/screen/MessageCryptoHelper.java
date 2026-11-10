@@ -1,11 +1,13 @@
 package a.b.screen;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import javax.crypto.SecretKey;
 import a.b.MainActivity;
 import a.b.model.Message;
 import a.b.util.Crypto;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.crypto.SecretKey;
 
 /** E2EE helpers: prepare outgoing text, decrypt incoming messages in place. */
 final class MessageCryptoHelper {
@@ -19,7 +21,9 @@ final class MessageCryptoHelper {
         SecretKey key = host.key();
         MainActivity activity = host.activity;
         if (key == null) {
-            if (activity != null) activity.toast(host.forced ? "Encryption key not ready yet" : "Encryption key missing");
+            if (activity != null)
+                activity.toast(
+                        host.forced ? "Encryption key not ready yet" : "Encryption key missing");
             return null;
         }
         if (host.channelId == null) {
@@ -34,7 +38,8 @@ final class MessageCryptoHelper {
         Crypto.Preset p = host.preset();
         int max = Crypto.maxPlaintextBytes(p);
         if (Crypto.utf8Length(plain) > max) {
-            if (activity != null) activity.toast("Too long for " + p.label + " (max " + max + " bytes)");
+            if (activity != null)
+                activity.toast("Too long for " + p.label + " (max " + max + " bytes)");
             return null;
         }
         String out = Crypto.encrypt(plain, key, p, host.channelId, sender);
@@ -48,7 +53,9 @@ final class MessageCryptoHelper {
         if (key == null) return;
         String channelId = host.channelId;
         if (Crypto.looksEncrypted(m.content)) {
-            String plain = Crypto.decrypt(m.content, key, channelId, m.author != null ? m.author.id : null);
+            String plain =
+                    Crypto.decrypt(
+                            m.content, key, channelId, m.author != null ? m.author.id : null);
             if (plain != null) {
                 m.content = plain;
                 extractAndCleanDimensions(m);
@@ -70,8 +77,10 @@ final class MessageCryptoHelper {
         if (m == null || m.replyToContent == null) return;
         Matcher matcher = SIZE_TAG_PATTERN.matcher(m.replyToContent);
         if (matcher.find()) {
-            try { m.replyToContent = m.replyToContent.substring(matcher.end()); }
-            catch (Exception ignored) {}
+            try {
+                m.replyToContent = m.replyToContent.substring(matcher.end());
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -82,9 +91,11 @@ final class MessageCryptoHelper {
             try {
                 int w = Integer.parseInt(matcher.group(1));
                 int h = Integer.parseInt(matcher.group(2));
-                if (m.id != null) MessageMediaViewFactory.messageDimensionCache.put(m.id, new int[]{w, h});
+                if (m.id != null)
+                    MessageMediaViewFactory.messageDimensionCache.put(m.id, new int[] {w, h});
                 m.content = m.content.substring(matcher.end());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
     }
 }

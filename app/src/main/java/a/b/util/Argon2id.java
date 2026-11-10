@@ -140,11 +140,15 @@ public final class Argon2id {
         }
         for (int i = 0; i < 8; i++) {
             int b = 16 * i;
-            p(z, b, b + 1, b + 2, b + 3, b + 4, b + 5, b + 6, b + 7, b + 8, b + 9, b + 10, b + 11, b + 12, b + 13, b + 14, b + 15);
+            p(
+                    z, b, b + 1, b + 2, b + 3, b + 4, b + 5, b + 6, b + 7, b + 8, b + 9, b + 10,
+                    b + 11, b + 12, b + 13, b + 14, b + 15);
         }
         for (int i = 0; i < 8; i++) {
             int b = 2 * i;
-            p(z, b, b + 1, b + 16, b + 17, b + 32, b + 33, b + 48, b + 49, b + 64, b + 65, b + 80, b + 81, b + 96, b + 97, b + 112, b + 113);
+            p(
+                    z, b, b + 1, b + 16, b + 17, b + 32, b + 33, b + 48, b + 49, b + 64, b + 65,
+                    b + 80, b + 81, b + 96, b + 97, b + 112, b + 113);
         }
         if (xorOut) for (int i = 0; i < WORDS; i++) out[i] ^= z[i] ^ r[i];
         else for (int i = 0; i < WORDS; i++) out[i] = z[i] ^ r[i];
@@ -165,8 +169,24 @@ public final class Argon2id {
         v[b] = Long.rotateRight(v[b] ^ v[c], 63);
     }
 
-    private static void p(long[] v, int i0, int i1, int i2, int i3, int i4, int i5, int i6, int i7,
-                          int i8, int i9, int i10, int i11, int i12, int i13, int i14, int i15) {
+    private static void p(
+            long[] v,
+            int i0,
+            int i1,
+            int i2,
+            int i3,
+            int i4,
+            int i5,
+            int i6,
+            int i7,
+            int i8,
+            int i9,
+            int i10,
+            int i11,
+            int i12,
+            int i13,
+            int i14,
+            int i15) {
         g(v, i0, i4, i8, i12);
         g(v, i1, i5, i9, i13);
         g(v, i2, i6, i10, i14);

@@ -4,11 +4,10 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextUtils;
 import android.text.style.StyleSpan;
-import android.widget.ImageView;
 import android.view.View;
 import android.view.ViewGroup;
+
 import a.b.model.Message;
 import a.b.model.Role;
 import a.b.util.Crypto;
@@ -39,7 +38,7 @@ final class MessageBinder {
         }
         h.root.setPadding(adapter.dp(12), show ? adapter.dp(10) : 0, adapter.dp(12), adapter.dp(2));
         if (!show) return;
-        
+
         h.name.setText(displayName(msg));
         h.name.setTextColor(getAuthorColor(msg));
 
@@ -47,23 +46,34 @@ final class MessageBinder {
         h.time.setText(msg.encrypted ? "\uD83D\uDD12 " + timeStr : timeStr);
 
         String uid = msg.author != null ? msg.author.id : null;
-        boolean hasAvatar = adapter.activity != null && adapter.imageLoader != null
-            && msg.author != null && msg.author.id != null && isReal(msg.author.avatar);
-            
+        boolean hasAvatar =
+                adapter.activity != null
+                        && adapter.imageLoader != null
+                        && msg.author != null
+                        && msg.author.id != null
+                        && isReal(msg.author.avatar);
+
         h.avatarWrap.setBackground(Ui.oval(hasAvatar ? MessageAdapter.BG : Ui.avatarColor(uid)));
         h.avatarWrap.setClipToOutline(true);
 
         h.avatarIcon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         h.avatar.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
-        
+
         if (adapter.imageLoader != null) {
             if (hasAvatar) {
-                adapter.imageLoader.load(MessageAdapter.CDN + "avatars/" + msg.author.id + "/" + msg.author.avatar + ".png?size=128", h.avatar);
+                adapter.imageLoader.load(
+                        MessageAdapter.CDN
+                                + "avatars/"
+                                + msg.author.id
+                                + "/"
+                                + msg.author.avatar
+                                + ".png?size=128",
+                        h.avatar);
             } else {
-                h.avatar.setImageDrawable(null); 
+                h.avatar.setImageDrawable(null);
             }
         }
-        
+
         View.OnClickListener open = v -> openProfile(uid);
         h.avatarWrap.setOnClickListener(open);
         h.name.setOnClickListener(open);
@@ -79,10 +89,14 @@ final class MessageBinder {
     int getAuthorColor(Message msg) {
         if (adapter.activity == null) return Color.WHITE;
         java.util.List<String> roles = msg.roleIds;
-        if ((roles == null || roles.isEmpty()) && msg.author != null && msg.author.id != null && adapter.activity.userRoleCache != null) {
+        if ((roles == null || roles.isEmpty())
+                && msg.author != null
+                && msg.author.id != null
+                && adapter.activity.userRoleCache != null) {
             roles = adapter.activity.userRoleCache.get(msg.author.id);
         }
-        if (roles == null || roles.isEmpty() || adapter.activity.roleCache == null) return Color.WHITE;
+        if (roles == null || roles.isEmpty() || adapter.activity.roleCache == null)
+            return Color.WHITE;
         Role highest = null;
         for (String roleId : roles) {
             if (roleId == null) continue;
@@ -95,20 +109,38 @@ final class MessageBinder {
     String displayName(Message message) {
         String nick = null;
         if (adapter.activity != null && message.author != null && message.author.id != null) {
-            String cacheKey = adapter.guildId != null ? adapter.guildId + "_" + message.author.id : message.author.id;
-            nick = adapter.activity.userNickCache != null ? adapter.activity.userNickCache.get(cacheKey) : null;
+            String cacheKey =
+                    adapter.guildId != null
+                            ? adapter.guildId + "_" + message.author.id
+                            : message.author.id;
+            nick =
+                    adapter.activity.userNickCache != null
+                            ? adapter.activity.userNickCache.get(cacheKey)
+                            : null;
             if (nick == null && adapter.guildId != null) {
                 nick = adapter.activity.userNickCache.get(message.author.id);
             }
         }
-        String name = isReal(message.memberNick) ? message.memberNick :
-                      isReal(nick) ? nick :
-                      message.author == null ? "System" :
-                      isReal(message.author.globalName) ? message.author.globalName :
-                      isReal(message.author.username) ? message.author.username :
-                      "Unknown";
-        if (adapter.activity != null && message.author != null && message.author.id != null && adapter.activity.userNameCache != null) {
-            String global = isReal(message.author.globalName) ? message.author.globalName : message.author.username;
+        String name =
+                isReal(message.memberNick)
+                        ? message.memberNick
+                        : isReal(nick)
+                                ? nick
+                                : message.author == null
+                                        ? "System"
+                                        : isReal(message.author.globalName)
+                                                ? message.author.globalName
+                                                : isReal(message.author.username)
+                                                        ? message.author.username
+                                                        : "Unknown";
+        if (adapter.activity != null
+                && message.author != null
+                && message.author.id != null
+                && adapter.activity.userNameCache != null) {
+            String global =
+                    isReal(message.author.globalName)
+                            ? message.author.globalName
+                            : message.author.username;
             if (isReal(global)) adapter.activity.userNameCache.put(message.author.id, global);
         }
         return name;
@@ -119,8 +151,14 @@ final class MessageBinder {
         SpannableStringBuilder sb = new SpannableStringBuilder("\u21B3 ");
         String authorName = m.replyToAuthorName;
         if (adapter.activity != null && m.replyToAuthorId != null) {
-            String cacheKey = adapter.guildId != null ? adapter.guildId + "_" + m.replyToAuthorId : m.replyToAuthorId;
-            String cachedNick = adapter.activity.userNickCache != null ? adapter.activity.userNickCache.get(cacheKey) : null;
+            String cacheKey =
+                    adapter.guildId != null
+                            ? adapter.guildId + "_" + m.replyToAuthorId
+                            : m.replyToAuthorId;
+            String cachedNick =
+                    adapter.activity.userNickCache != null
+                            ? adapter.activity.userNickCache.get(cacheKey)
+                            : null;
             if (cachedNick == null && adapter.guildId != null) {
                 cachedNick = adapter.activity.userNickCache.get(m.replyToAuthorId);
             }
@@ -142,8 +180,11 @@ final class MessageBinder {
     }
 
     void openProfile(String uid) {
-        if (uid != null && adapter.activity != null) adapter.activity.navigate(new ProfileScreen(uid, adapter.guildId));
+        if (uid != null && adapter.activity != null)
+            adapter.activity.navigate(new ProfileScreen(uid, adapter.guildId));
     }
 
-    static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
+    static boolean isReal(String s) {
+        return s != null && !s.isEmpty() && !"null".equals(s);
+    }
 }

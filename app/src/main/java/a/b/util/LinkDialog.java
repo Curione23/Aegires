@@ -20,16 +20,20 @@ public final class LinkDialog {
         if (activity.isFinishing()) return;
 
         new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Open link?")
-            .setMessage(url)
-            .setPositiveButton("Open", (d, w) -> open(ctx, url))
-            .setNeutralButton("Copy", (d, w) -> {
-                ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
-                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("link", url));
-                Toast.makeText(ctx, "Link copied", Toast.LENGTH_SHORT).show();
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+                .setTitle("Open link?")
+                .setMessage(url)
+                .setPositiveButton("Open", (d, w) -> open(ctx, url))
+                .setNeutralButton(
+                        "Copy",
+                        (d, w) -> {
+                            ClipboardManager cm =
+                                    (ClipboardManager)
+                                            ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+                            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("link", url));
+                            Toast.makeText(ctx, "Link copied", Toast.LENGTH_SHORT).show();
+                        })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private static void open(Context ctx, String url) {

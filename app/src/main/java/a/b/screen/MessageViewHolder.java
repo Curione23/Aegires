@@ -6,22 +6,25 @@ import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import androidx.recyclerview.widget.RecyclerView;
-import java.util.ArrayList;
-import java.util.List;
+
 import a.b.model.Embed;
 import a.b.model.Message;
 import a.b.util.Crypto;
 import a.b.util.ImageLoader;
 import a.b.util.Ui;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** A single message row. */
-public final class MessageViewHolder extends RecyclerView.ViewHolder implements View.OnLongClickListener {
+public final class MessageViewHolder extends RecyclerView.ViewHolder
+        implements View.OnLongClickListener {
     private static final int WRAP = -2;
     private static final int HORIZONTAL = LinearLayout.HORIZONTAL;
     private static final int VERTICAL = LinearLayout.VERTICAL;
@@ -41,7 +44,10 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         super(new LinearLayout(context));
         this.adapter = adapter;
         root = (LinearLayout) itemView;
-        root.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+        root.setLayoutParams(
+                new RecyclerView.LayoutParams(
+                        RecyclerView.LayoutParams.MATCH_PARENT,
+                        RecyclerView.LayoutParams.WRAP_CONTENT));
         root.setOrientation(HORIZONTAL);
         root.setBackgroundColor(BG);
         root.setPadding(adapter.dp(12), adapter.dp(10), adapter.dp(12), 0);
@@ -50,7 +56,9 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         avatarWrap = new FrameLayout(context);
         avatarWrap.setBackground(Ui.oval(Ui.AVATAR_COLORS[0]));
         avatarWrap.setClipToOutline(true);
-        root.addView(avatarWrap, lp(adapter.avatarSize, adapter.avatarSize, 0, adapter.dp(2), adapter.dp(12), 0));
+        root.addView(
+                avatarWrap,
+                lp(adapter.avatarSize, adapter.avatarSize, 0, adapter.dp(2), adapter.dp(12), 0));
 
         avatarIcon = Ui.iconView(context, Ui.I_USER, Color.WHITE, 24);
         avatarIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
@@ -119,7 +127,8 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
 
     void bind(Message msg, int pos) {
         if (adapter.activity == null || msg == null) return;
-        boolean showHeader = pos == 0 || !MessageAdapter.sameGroup(adapter.displayList.get(pos - 1), msg);
+        boolean showHeader =
+                pos == 0 || !MessageAdapter.sameGroup(adapter.displayList.get(pos - 1), msg);
         adapter.bindHeader(this, msg, showHeader);
         root.setBackgroundColor(adapter.mentionsSelf(msg) ? 0xFF3A3A33 : BG);
 
@@ -151,9 +160,11 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         }
 
         List<View> oldMedia = new ArrayList<>();
-        for (int i = 0; i < attachments.getChildCount(); i++) oldMedia.add(attachments.getChildAt(i));
+        for (int i = 0; i < attachments.getChildCount(); i++)
+            oldMedia.add(attachments.getChildAt(i));
         for (int i = 0; i < embeds.getChildCount(); i++) oldMedia.add(embeds.getChildAt(i));
-        for (int i = 0; i < linkPreviews.getChildCount(); i++) oldMedia.add(linkPreviews.getChildAt(i));
+        for (int i = 0; i < linkPreviews.getChildCount(); i++)
+            oldMedia.add(linkPreviews.getChildAt(i));
         attachments.removeAllViews();
         if (msg.attachments != null) {
             for (Message.Attachment a : msg.attachments) {
@@ -164,7 +175,8 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         embeds.removeAllViews();
         if (msg.embeds != null) {
             for (Embed e : msg.embeds) {
-                if (e != null && !EmbedViewFactory.duplicatesAttachment(e, msg.attachments)) add(embeds, adapter.embedView(e, msg, root));
+                if (e != null && !EmbedViewFactory.duplicatesAttachment(e, msg.attachments))
+                    add(embeds, adapter.embedView(e, msg, root));
             }
         }
 
@@ -181,7 +193,8 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder implements 
         box.addView(child);
     }
 
-    @Override public boolean onLongClick(View v) {
+    @Override
+    public boolean onLongClick(View v) {
         if (adapter.longPressListener == null || msg == null) return false;
         adapter.longPressListener.onMessageLongPress(msg, v);
         return true;

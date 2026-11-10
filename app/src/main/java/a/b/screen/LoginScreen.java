@@ -1,7 +1,6 @@
 package a.b.screen;
 
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.view.Gravity;
@@ -12,6 +11,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import a.b.MainActivity;
 import a.b.util.TokenStore;
 import a.b.util.Ui;
@@ -66,36 +66,54 @@ public class LoginScreen implements Screen {
         final TextView connect = Ui.primaryButton(activity, "Log in");
         form.addView(connect, new LinearLayout.LayoutParams(-1, dp(48)));
 
-        final Runnable submit = () -> {
-            if (activity == null) return;
-            String token = tokenInput.getText().toString().trim();
-            if (token.length() > 1 && (token.startsWith("\"") && token.endsWith("\""))) {
-                token = token.substring(1, token.length() - 1).trim();
-            }
-            if (token.isEmpty()) {
-                tokenInput.setError("Enter a token");
-                return;
-            }
-            TokenStore.save(activity, token);
-            activity.setToken(token);
-            activity.resetTo(new HomeScreen(activity));
-        };
+        final Runnable submit =
+                () -> {
+                    if (activity == null) return;
+                    String token = tokenInput.getText().toString().trim();
+                    if (token.length() > 1 && (token.startsWith("\"") && token.endsWith("\""))) {
+                        token = token.substring(1, token.length() - 1).trim();
+                    }
+                    if (token.isEmpty()) {
+                        tokenInput.setError("Enter a token");
+                        return;
+                    }
+                    TokenStore.save(activity, token);
+                    activity.setToken(token);
+                    activity.resetTo(new HomeScreen(activity));
+                };
         connect.setOnClickListener(v -> submit.run());
-        tokenInput.setOnEditorActionListener((v, actionId, e) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) { submit.run(); return true; }
-            return false;
-        });
+        tokenInput.setOnEditorActionListener(
+                (v, actionId, e) -> {
+                    if (actionId == EditorInfo.IME_ACTION_DONE) {
+                        submit.run();
+                        return true;
+                    }
+                    return false;
+                });
         root.addView(form);
         return view = root;
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
-    @Override public View getView() { return view; }
-    @Override public void onResume() {}
-    @Override public void onPause() {}
-    @Override public void onDestroy() {
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+
+    @Override
+    public View getView() {
+        return view;
+    }
+
+    @Override
+    public void onResume() {}
+
+    @Override
+    public void onPause() {}
+
+    @Override
+    public void onDestroy() {
         activity = null;
         view = null;
     }

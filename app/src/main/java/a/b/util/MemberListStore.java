@@ -1,11 +1,12 @@
 package a.b.util;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /** Mirrors the gateway's GUILD_MEMBER_LIST_UPDATE state for the currently subscribed channel. */
 public final class MemberListStore {
@@ -25,8 +26,9 @@ public final class MemberListStore {
         }
     }
 
-    public interface Listener { 
-        void onMemberListChanged(); 
+    public interface Listener {
+        void onMemberListChanged();
+
         void onMemberListRangeChanged(int positionStart, int itemCount);
     }
 
@@ -36,20 +38,38 @@ public final class MemberListStore {
     private String guildId, listId;
     private int memberCount, onlineCount, listSize;
 
-    public void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
-    public void removeListener(Listener l) { listeners.remove(l); }
+    public void addListener(Listener l) {
+        if (!listeners.contains(l)) listeners.add(l);
+    }
 
-    public String guildId() { return guildId; }
-    public int memberCount() { return memberCount; }
-    public int onlineCount() { return onlineCount; }
+    public void removeListener(Listener l) {
+        listeners.remove(l);
+    }
 
-    /** Live count for a group, taken from the latest event's group list (items can carry stale or no counts). */
+    public String guildId() {
+        return guildId;
+    }
+
+    public int memberCount() {
+        return memberCount;
+    }
+
+    public int onlineCount() {
+        return onlineCount;
+    }
+
+    /**
+     * Live count for a group, taken from the latest event's group list (items can carry stale or no
+     * counts).
+     */
     public int groupCount(String groupId, int fallback) {
         Integer c = groupCounts.get(groupId);
         return c != null ? c : fallback;
     }
 
-    public Entry get(int i) { return i >= 0 && i < items.size() ? items.get(i) : null; }
+    public Entry get(int i) {
+        return i >= 0 && i < items.size() ? items.get(i) : null;
+    }
 
     public int total() {
         return listSize > 0 ? listSize : items.size();
@@ -97,51 +117,57 @@ public final class MemberListStore {
         fire();
     }
 
-    private void apply(JSONObject op, Map<String, String> nickCache, Map<String, String> nameCache) {
+    private void apply(
+            JSONObject op, Map<String, String> nickCache, Map<String, String> nameCache) {
         String kind = op.optString("op", "");
         switch (kind) {
-            case "SYNC": {
-                JSONArray range = op.optJSONArray("range");
-                JSONArray arr = op.optJSONArray("items");
-                if (range == null || arr == null) return;
-                int start = range.optInt(0);
-                pad(start);
-                for (int i = 0; i < arr.length(); i++) {
-                    set(start + i, parse(arr.optJSONObject(i), nickCache, nameCache));
+            case "SYNC":
+                {
+                    JSONArray range = op.optJSONArray("range");
+                    JSONArray arr = op.optJSONArray("items");
+                    if (range == null || arr == null) return;
+                    int start = range.optInt(0);
+                    pad(start);
+                    for (int i = 0; i < arr.length(); i++) {
+                        set(start + i, parse(arr.optJSONObject(i), nickCache, nameCache));
+                    }
+                    if (arr.length() > 0) fireRange(start, arr.length());
+                    break;
                 }
-                if (arr.length() > 0) fireRange(start, arr.length());
-                break;
-            }
-            case "INSERT": {
-                int index = op.optInt("index");
-                pad(index);
-                items.add(index, parse(op.optJSONObject("item"), nickCache, nameCache));
-                fireRange(index, Math.max(1, items.size() - index));
-                break;
-            }
-            case "UPDATE": {
-                int index = op.optInt("index");
-                set(index, parse(op.optJSONObject("item"), nickCache, nameCache));
-                fireRange(index, 1);
-                break;
-            }
-            case "DELETE": {
-                int index = op.optInt("index");
-                if (index >= 0 && index < items.size()) {
-                    items.remove(index);
-                    if (listSize > 0) listSize--;
+            case "INSERT":
+                {
+                    int index = op.optInt("index");
+                    pad(index);
+                    items.add(index, parse(op.optJSONObject("item"), nickCache, nameCache));
                     fireRange(index, Math.max(1, items.size() - index));
+                    break;
                 }
-                break;
-            }
-            case "INVALIDATE": {
-                JSONArray range = op.optJSONArray("range");
-                if (range == null) return;
-                int start = range.optInt(0), end = range.optInt(1);
-                for (int i = start; i <= end && i < items.size(); i++) items.set(i, null);
-                fireRange(start, end - start + 1);
-                break;
-            }
+            case "UPDATE":
+                {
+                    int index = op.optInt("index");
+                    set(index, parse(op.optJSONObject("item"), nickCache, nameCache));
+                    fireRange(index, 1);
+                    break;
+                }
+            case "DELETE":
+                {
+                    int index = op.optInt("index");
+                    if (index >= 0 && index < items.size()) {
+                        items.remove(index);
+                        if (listSize > 0) listSize--;
+                        fireRange(index, Math.max(1, items.size() - index));
+                    }
+                    break;
+                }
+            case "INVALIDATE":
+                {
+                    JSONArray range = op.optJSONArray("range");
+                    if (range == null) return;
+                    int start = range.optInt(0), end = range.optInt(1);
+                    for (int i = start; i <= end && i < items.size(); i++) items.set(i, null);
+                    fireRange(start, end - start + 1);
+                    break;
+                }
         }
     }
 
@@ -154,7 +180,8 @@ public final class MemberListStore {
         items.set(index, e);
     }
 
-    private Entry parse(JSONObject item, Map<String, String> nickCache, Map<String, String> nameCache) {
+    private Entry parse(
+            JSONObject item, Map<String, String> nickCache, Map<String, String> nameCache) {
         if (item == null) return null;
         Entry e = new Entry();
         JSONObject grp = item.optJSONObject("group");
@@ -182,7 +209,8 @@ public final class MemberListStore {
         if (e.userId != null) {
             String base = Ui.isReal(e.globalName) ? e.globalName : e.username;
             if (nameCache != null && Ui.isReal(base)) nameCache.put(e.userId, base);
-            if (nickCache != null && Ui.isReal(e.nick) && guildId != null) nickCache.put(guildId + "_" + e.userId, e.nick);
+            if (nickCache != null && Ui.isReal(e.nick) && guildId != null)
+                nickCache.put(guildId + "_" + e.userId, e.nick);
         }
         return e;
     }

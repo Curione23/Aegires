@@ -27,15 +27,17 @@ public class Channel {
 
     /** Forum channel tags, and the tags applied to a thread. */
     public final List<ForumTag> availableTags = new ArrayList<>();
+
     public final List<String> appliedTagIds = new ArrayList<>();
 
     /** Forum thread metadata. */
     public int messageCount, memberCount, totalMessageSent;
+
     public long lastActivity, archiveTimestamp;
     public boolean archived, locked, pinned;
 
     public Channel(String id, String name, int type, String parent_id) {
-        this.id = id; 
+        this.id = id;
         this.name = name;
         this.type = type;
         this.parent_id = parent_id;

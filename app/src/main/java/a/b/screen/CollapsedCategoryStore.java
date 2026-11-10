@@ -2,9 +2,11 @@ package a.b.screen;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
+import a.b.MainActivity;
+
 import java.util.HashSet;
 import java.util.Set;
-import a.b.MainActivity;
 
 /** Persists which channel categories are collapsed, per-device. */
 final class CollapsedCategoryStore {

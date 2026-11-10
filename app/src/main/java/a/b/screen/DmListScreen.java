@@ -5,14 +5,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+
 import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.DmChannel;
 import a.b.util.MentionStore;
 import a.b.util.Ui;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class DmListScreen implements Screen, MentionStore.Listener {
     MainActivity activity;
@@ -33,7 +35,7 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.BG_SECONDARY);
-        
+
         Ui.AppBar bar = new Ui.AppBar(host, "Direct Messages", Ui.BG_SECONDARY, null);
         root.addView(bar.view, new LinearLayout.LayoutParams(-1, -2));
 
@@ -53,34 +55,42 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         if (activity == null || destroyed) return;
         error = null;
         render();
-        activity.apiClient.fetchDms(new ApiClient.Callback<List<DmChannel>>() {
-            @Override public void onSuccess(List<DmChannel> result) {
-                if (destroyed || activity == null) return;
-                dms = new ArrayList<>(result);
-                Collections.sort(dms, (a, b) -> {
-                    String x = a.lastMessageId == null ? "0" : a.lastMessageId;
-                    String y = b.lastMessageId == null ? "0" : b.lastMessageId;
-                    return MentionStore.compareIds(y, x);
+        activity.apiClient.fetchDms(
+                new ApiClient.Callback<List<DmChannel>>() {
+                    @Override
+                    public void onSuccess(List<DmChannel> result) {
+                        if (destroyed || activity == null) return;
+                        dms = new ArrayList<>(result);
+                        Collections.sort(
+                                dms,
+                                (a, b) -> {
+                                    String x = a.lastMessageId == null ? "0" : a.lastMessageId;
+                                    String y = b.lastMessageId == null ? "0" : b.lastMessageId;
+                                    return MentionStore.compareIds(y, x);
+                                });
+                        render();
+                    }
+
+                    @Override
+                    public void onError(String msg) {
+                        if (destroyed) return;
+                        error = msg;
+                        render();
+                    }
                 });
-                render();
-            }
-            @Override public void onError(String msg) {
-                if (destroyed) return;
-                error = msg;
-                render();
-            }
-        });
     }
 
     private void render() {
         if (destroyed || listContainer == null || activity == null) return;
         listContainer.removeAllViews();
         if (error != null) {
-            android.widget.TextView t = Ui.emptyState(activity, "Failed to load DMs.\nTap to retry.");
-            t.setOnClickListener(v -> {
-                if (destroyed || activity == null) return;
-                fetch();
-            });
+            android.widget.TextView t =
+                    Ui.emptyState(activity, "Failed to load DMs.\nTap to retry.");
+            t.setOnClickListener(
+                    v -> {
+                        if (destroyed || activity == null) return;
+                        fetch();
+                    });
             listContainer.addView(t);
         } else if (dms == null) {
             listContainer.addView(Ui.emptyState(activity, "Loading\u2026"));
@@ -92,19 +102,40 @@ public class DmListScreen implements Screen, MentionStore.Listener {
         }
     }
 
-    @Override public void onMentionsChanged() {
+    @Override
+    public void onMentionsChanged() {
         if (activity == null || destroyed) return;
         activity.handler.removeCallbacks(renderRunnable);
         activity.handler.postDelayed(renderRunnable, 120);
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 
-    @Override public View getView() { return view; }
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
-    @Override public void onResume() { if (activity != null) { activity.mentions.addListener(this); render(); } }
-    @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
-    @Override public void onDestroy() {
+    @Override
+    public View getView() {
+        return view;
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+
+    @Override
+    public void onResume() {
+        if (activity != null) {
+            activity.mentions.addListener(this);
+            render();
+        }
+    }
+
+    @Override
+    public void onPause() {
+        if (activity != null) activity.mentions.removeListener(this);
+    }
+
+    @Override
+    public void onDestroy() {
         destroyed = true;
         if (activity != null) {
             activity.mentions.removeListener(this);

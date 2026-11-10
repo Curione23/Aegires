@@ -9,11 +9,13 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
-import javax.crypto.SecretKey;
+
 import a.b.MainActivity;
 import a.b.util.Crypto;
 import a.b.util.MediaCache;
 import a.b.util.Ui;
+
+import javax.crypto.SecretKey;
 
 /** The gear-icon "Session" menu: encryption preset/key + logout. */
 final class GuildSessionMenu {
@@ -30,34 +32,54 @@ final class GuildSessionMenu {
         AlertDialog d = current;
         current = null;
         if (d != null) {
-            try { d.dismiss(); } catch (Exception ignored) {}
+            try {
+                d.dismiss();
+            } catch (Exception ignored) {
+            }
         }
     }
 
     void showSessionMenu() {
         if (activity == null) return;
         final boolean hasKey = activity.e2eeKey != null;
-        final String presetItem = "Encryption preset: "
-            + (activity.e2eePreset != null ? activity.e2eePreset.label : "AES-128-GCM");
-        String[] items = hasKey
-            ? new String[]{"Set encryption key", "Clear encryption key", presetItem, "Log out"}
-            : new String[]{"Set encryption key", presetItem, "Log out"};
-        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Session")
-            .setItems(items, (d, which) -> {
-                String picked = items[which];
-                if (picked.startsWith("Set encryption")) showSetKeyDialog();
-                else if (picked.startsWith("Clear encryption")) clearKey();
-                else if (picked.startsWith("Encryption preset")) showPresetDialog();
-                else confirmLogout();
-            })
-            .show();
+        final String presetItem =
+                "Encryption preset: "
+                        + (activity.e2eePreset != null ? activity.e2eePreset.label : "AES-128-GCM");
+        String[] items =
+                hasKey
+                        ? new String[] {
+                            "Set encryption key", "Clear encryption key", presetItem, "Log out"
+                        }
+                        : new String[] {"Set encryption key", presetItem, "Log out"};
+        current =
+                new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("Session")
+                        .setItems(
+                                items,
+                                (d, which) -> {
+                                    String picked = items[which];
+                                    if (picked.startsWith("Set encryption")) showSetKeyDialog();
+                                    else if (picked.startsWith("Clear encryption")) clearKey();
+                                    else if (picked.startsWith("Encryption preset"))
+                                        showPresetDialog();
+                                    else confirmLogout();
+                                })
+                        .show();
     }
 
     private static String presetBlurb(Crypto.Preset p) {
-        String tier = p == Crypto.Preset.AES128 ? "Compact" : p == Crypto.Preset.AES192 ? "Balanced" : "Maximum";
-        return tier + " \u00B7 " + p.tagBits() + "-bit tag \u00B7 " + p.padBlock + "-byte padding\nup to "
-            + Crypto.maxPlaintextBytes(p) + " bytes per message";
+        String tier =
+                p == Crypto.Preset.AES128
+                        ? "Compact"
+                        : p == Crypto.Preset.AES192 ? "Balanced" : "Maximum";
+        return tier
+                + " \u00B7 "
+                + p.tagBits()
+                + "-bit tag \u00B7 "
+                + p.padBlock
+                + "-byte padding\nup to "
+                + Crypto.maxPlaintextBytes(p)
+                + " bytes per message";
     }
 
     private void showPresetDialog() {
@@ -68,8 +90,13 @@ final class GuildSessionMenu {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(8), dp(20), 0);
 
-        TextView info = Ui.text(host, "Applies to the messages and files you send. You can read everyone else's messages regardless of profile. "
-            + "Preset channels always use AES-128-GCM.", Ui.MUTED, 13);
+        TextView info =
+                Ui.text(
+                        host,
+                        "Applies to the messages and files you send. You can read everyone else's messages regardless of profile. "
+                                + "Preset channels always use AES-128-GCM.",
+                        Ui.MUTED,
+                        13);
         info.setPadding(0, 0, 0, dp(10));
         box.addView(info);
 
@@ -87,39 +114,53 @@ final class GuildSessionMenu {
         }
         box.addView(group);
 
-        current = new AlertDialog.Builder(host, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Encryption preset")
-            .setView(box)
-            .setPositiveButton("Save", (d, w) -> {
-                View sel = group.findViewById(group.getCheckedRadioButtonId());
-                if (sel == null || !(sel.getTag() instanceof Crypto.Preset)) return;
-                Crypto.Preset p = (Crypto.Preset) sel.getTag();
-                host.setE2eePreset(p);
-                host.toast("Using " + p.label + " (max " + Crypto.maxPlaintextBytes(p) + " bytes per message)");
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+        current =
+                new AlertDialog.Builder(host, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("Encryption preset")
+                        .setView(box)
+                        .setPositiveButton(
+                                "Save",
+                                (d, w) -> {
+                                    View sel = group.findViewById(group.getCheckedRadioButtonId());
+                                    if (sel == null || !(sel.getTag() instanceof Crypto.Preset))
+                                        return;
+                                    Crypto.Preset p = (Crypto.Preset) sel.getTag();
+                                    host.setE2eePreset(p);
+                                    host.toast(
+                                            "Using "
+                                                    + p.label
+                                                    + " (max "
+                                                    + Crypto.maxPlaintextBytes(p)
+                                                    + " bytes per message)");
+                                })
+                        .setNegativeButton("Cancel", null)
+                        .show();
     }
 
     private void confirmLogout() {
         if (activity == null) return;
-        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Log out")
-            .setMessage("Clear the saved token and return to the login screen?")
-            .setPositiveButton("Log out", (dialog, which) -> {
-                if (activity == null) return;
-                MediaCache.get(activity).clearSensitive();
-                activity.logout();
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+        current =
+                new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("Log out")
+                        .setMessage("Clear the saved token and return to the login screen?")
+                        .setPositiveButton(
+                                "Log out",
+                                (dialog, which) -> {
+                                    if (activity == null) return;
+                                    MediaCache.get(activity).clearSensitive();
+                                    activity.logout();
+                                })
+                        .setNegativeButton("Cancel", null)
+                        .show();
     }
 
     private void showSetKeyDialog() {
         if (activity == null) return;
         final EditText input = new EditText(activity);
         input.setHint("Encryption password");
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setInputType(
+                android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(Ui.MUTED);
         input.setSingleLine(true);
@@ -127,19 +168,31 @@ final class GuildSessionMenu {
         box.setPadding(dp(20), dp(8), dp(20), 0);
         box.addView(input);
 
-        current = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Set encryption key")
-            .setMessage("Everyone in the chat must use the same password. Use a long passphrase: the password is the only secret protecting your messages.")
-            .setView(box)
-            .setPositiveButton("Set", (d, which) -> {
-                String pass = input.getText().toString();
-                input.setText("");
-                if (pass.length() < 8) { if (activity != null) activity.toast("Use at least 8 characters"); return; }
-                if (pass.length() > 256) { if (activity != null) activity.toast("Password too long (max 256)"); return; }
-                deriveAndSetKey(pass);
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
+        current =
+                new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("Set encryption key")
+                        .setMessage(
+                                "Everyone in the chat must use the same password. Use a long passphrase: the password is the only secret protecting your messages.")
+                        .setView(box)
+                        .setPositiveButton(
+                                "Set",
+                                (d, which) -> {
+                                    String pass = input.getText().toString();
+                                    input.setText("");
+                                    if (pass.length() < 8) {
+                                        if (activity != null)
+                                            activity.toast("Use at least 8 characters");
+                                        return;
+                                    }
+                                    if (pass.length() > 256) {
+                                        if (activity != null)
+                                            activity.toast("Password too long (max 256)");
+                                        return;
+                                    }
+                                    deriveAndSetKey(pass);
+                                })
+                        .setNegativeButton("Cancel", null)
+                        .show();
     }
 
     private void deriveAndSetKey(final String password) {
@@ -148,22 +201,27 @@ final class GuildSessionMenu {
         final boolean hadKey = host.e2eeKey != null;
         final int gen = host.derivationGen.incrementAndGet();
         host.toast("Deriving key, this takes a few seconds\u2026");
-        new Thread(() -> {
-            final SecretKey key = Crypto.deriveKey(password);
-            host.runOnUiThread(() -> {
-                if (gen != host.derivationGen.get()) return; // superseded
-                if (key == null) {
-                    host.toast(hadKey
-                        ? "Key derivation failed; previous key still active"
-                        : "Key derivation failed (not enough memory?)");
-                    return;
-                }
-                host.e2eeKey = key;
-                host.e2eeEnabled = true;
-                MediaCache.get(host).clearFailures();
-                host.toast("Encryption enabled for this session");
-            });
-        }, "key-derivation").start();
+        new Thread(
+                        () -> {
+                            final SecretKey key = Crypto.deriveKey(password);
+                            host.runOnUiThread(
+                                    () -> {
+                                        if (gen != host.derivationGen.get()) return; // superseded
+                                        if (key == null) {
+                                            host.toast(
+                                                    hadKey
+                                                            ? "Key derivation failed; previous key still active"
+                                                            : "Key derivation failed (not enough memory?)");
+                                            return;
+                                        }
+                                        host.e2eeKey = key;
+                                        host.e2eeEnabled = true;
+                                        MediaCache.get(host).clearFailures();
+                                        host.toast("Encryption enabled for this session");
+                                    });
+                        },
+                        "key-derivation")
+                .start();
     }
 
     private void clearKey() {
@@ -175,5 +233,7 @@ final class GuildSessionMenu {
         activity.toast("Encryption disabled");
     }
 
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) {
+        return (int) (v * density);
+    }
 }

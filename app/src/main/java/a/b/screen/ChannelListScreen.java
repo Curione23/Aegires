@@ -6,8 +6,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import java.util.List;
-import java.util.Locale;
+
 import a.b.MainActivity;
 import a.b.api.ApiClient;
 import a.b.model.Channel;
@@ -15,6 +14,9 @@ import a.b.model.Guild;
 import a.b.model.GuildInfo;
 import a.b.util.MentionStore;
 import a.b.util.Ui;
+
+import java.util.List;
+import java.util.Locale;
 
 public class ChannelListScreen implements Screen, MentionStore.Listener {
     MainActivity activity;
@@ -31,9 +33,10 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
     private CollapsedCategoryStore collapsedStore;
     private ChannelViewFactory viewFactory;
 
-    private final Runnable retryRunnable = () -> {
-        if (activity != null && channels == null) fetchChannels(false);
-    };
+    private final Runnable retryRunnable =
+            () -> {
+                if (activity != null && channels == null) fetchChannels(false);
+            };
 
     private final Runnable renderRunnable = this::render;
 
@@ -75,53 +78,72 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
 
     private void loadGuildInfo() {
         GuildInfo cached = activity.guildInfoCache.get(guildId);
-        if (cached != null) { applyGuildInfo(cached); return; }
-        activity.apiClient.fetchGuildInfo(guildId, new ApiClient.Callback<GuildInfo>() {
-            @Override public void onSuccess(GuildInfo info) {
-                if (activity == null) return;
-                activity.guildInfoCache.put(guildId, info);
-                applyGuildInfo(info);
-            }
-            @Override public void onError(String err) {}
-        });
+        if (cached != null) {
+            applyGuildInfo(cached);
+            return;
+        }
+        activity.apiClient.fetchGuildInfo(
+                guildId,
+                new ApiClient.Callback<GuildInfo>() {
+                    @Override
+                    public void onSuccess(GuildInfo info) {
+                        if (activity == null) return;
+                        activity.guildInfoCache.put(guildId, info);
+                        applyGuildInfo(info);
+                    }
+
+                    @Override
+                    public void onError(String err) {}
+                });
     }
 
     private void loadChannels() {
         List<Channel> cached = activity.channelCache.get(guildId);
-        if (cached != null) { setChannels(cached); return; }
-        activity.diskCache.loadChannels(guildId, disk -> {
-            if (activity == null) return;
-            boolean stale = disk != null && channels == null;
-            if (stale) setChannels(disk);
-            fetchChannels(stale || channels != null);
-        });
+        if (cached != null) {
+            setChannels(cached);
+            return;
+        }
+        activity.diskCache.loadChannels(
+                guildId,
+                disk -> {
+                    if (activity == null) return;
+                    boolean stale = disk != null && channels == null;
+                    if (stale) setChannels(disk);
+                    fetchChannels(stale || channels != null);
+                });
     }
 
     private void fetchChannels(final boolean haveStale) {
         if (refreshing || activity == null) return;
         refreshing = true;
         final MainActivity host = activity;
-        host.apiClient.fetchChannels(guildId, isOwner, new ApiClient.Callback<List<Channel>>() {
-            @Override public void onSuccess(List<Channel> result) {
-                refreshing = false;
-                if (result.isEmpty() && channels != null && !channels.isEmpty()) return;
-                host.channelCache.put(guildId, result);
-                host.diskCache.saveChannels(guildId, result);
-                if (activity == null) return;
-                setChannels(result);
-            }
-            @Override public void onError(String msg) {
-                refreshing = false;
-                if (activity == null || haveStale) return;
-                if (!retried) {
-                    retried = true;
-                    host.handler.postDelayed(retryRunnable, 3000);
-                    return;
-                }
-                error = msg;
-                render();
-            }
-        });
+        host.apiClient.fetchChannels(
+                guildId,
+                isOwner,
+                new ApiClient.Callback<List<Channel>>() {
+                    @Override
+                    public void onSuccess(List<Channel> result) {
+                        refreshing = false;
+                        if (result.isEmpty() && channels != null && !channels.isEmpty()) return;
+                        host.channelCache.put(guildId, result);
+                        host.diskCache.saveChannels(guildId, result);
+                        if (activity == null) return;
+                        setChannels(result);
+                    }
+
+                    @Override
+                    public void onError(String msg) {
+                        refreshing = false;
+                        if (activity == null || haveStale) return;
+                        if (!retried) {
+                            retried = true;
+                            host.handler.postDelayed(retryRunnable, 3000);
+                            return;
+                        }
+                        error = msg;
+                        render();
+                    }
+                });
     }
 
     private void setChannels(List<Channel> list) {
@@ -135,8 +157,15 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
 
     private void applyGuildInfo(GuildInfo info) {
         if (bar == null || info == null) return;
-        if (info.memberCount == 0 && info.onlineCount == 0) { bar.setSubtitle(null); return; }
-        bar.setSubtitle(formatNumber(info.memberCount) + " members \u00B7 " + formatNumber(info.onlineCount) + " online");
+        if (info.memberCount == 0 && info.onlineCount == 0) {
+            bar.setSubtitle(null);
+            return;
+        }
+        bar.setSubtitle(
+                formatNumber(info.memberCount)
+                        + " members \u00B7 "
+                        + formatNumber(info.onlineCount)
+                        + " online");
     }
 
     private static String formatNumber(int n) {
@@ -150,42 +179,71 @@ public class ChannelListScreen implements Screen, MentionStore.Listener {
         listContainer.removeAllViews();
         if (error != null) {
             TextView t = Ui.emptyState(activity, "Couldn't load channels.\nTap to retry.");
-            t.setOnClickListener(v -> { error = null; retried = false; render(); loadChannels(); });
+            t.setOnClickListener(
+                    v -> {
+                        error = null;
+                        retried = false;
+                        render();
+                        loadChannels();
+                    });
             listContainer.addView(t);
             return;
         }
-        if (channels == null) { listContainer.addView(Ui.emptyState(activity, "Loading\u2026")); return; }
-        if (channels.isEmpty()) { listContainer.addView(Ui.emptyState(activity, "No channels you can see.")); return; }
+        if (channels == null) {
+            listContainer.addView(Ui.emptyState(activity, "Loading\u2026"));
+            return;
+        }
+        if (channels.isEmpty()) {
+            listContainer.addView(Ui.emptyState(activity, "No channels you can see."));
+            return;
+        }
         renderChannelTree(channels);
     }
 
     private void renderChannelTree(List<Channel> all) {
         ChannelTreeBuilder.Result tree = ChannelTreeBuilder.build(all);
-        for (Channel ch : tree.uncategorized) listContainer.addView(viewFactory.createChannelRow(ch));
+        for (Channel ch : tree.uncategorized)
+            listContainer.addView(viewFactory.createChannelRow(ch));
         for (ChannelTreeBuilder.CategoryGroup g : tree.categories) {
             listContainer.addView(viewFactory.createCategory(g.category, g.children));
         }
     }
 
-    @Override public void onMentionsChanged() {
+    @Override
+    public void onMentionsChanged() {
         if (activity == null) return;
         activity.handler.removeCallbacks(renderRunnable);
         activity.handler.postDelayed(renderRunnable, 120);
     }
 
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) {
+        return (int) (v * density);
+    }
 
-    @Override public View getView() { return view; }
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
-    @Override public void onResume() {
+    @Override
+    public View getView() {
+        return view;
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+
+    @Override
+    public void onResume() {
         if (activity == null) return;
         activity.mentions.addListener(this);
         List<Channel> cached = activity.channelCache.get(guildId);
         if (cached == null && channels != null) fetchChannels(true);
         render();
     }
-    @Override public void onPause() { if (activity != null) activity.mentions.removeListener(this); }
-    @Override public void onDestroy() {
+
+    @Override
+    public void onPause() {
+        if (activity != null) activity.mentions.removeListener(this);
+    }
+
+    @Override
+    public void onDestroy() {
         if (activity != null) {
             activity.mentions.removeListener(this);
             activity.handler.removeCallbacks(retryRunnable);

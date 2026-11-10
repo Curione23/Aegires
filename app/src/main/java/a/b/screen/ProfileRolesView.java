@@ -4,13 +4,15 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import a.b.MainActivity;
+import a.b.model.Role;
+import a.b.util.Ui;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import a.b.MainActivity;
-import a.b.model.Role;
-import a.b.util.Ui;
 
 /** The "Roles" section with chip wrapping. */
 final class ProfileRolesView {
@@ -32,7 +34,9 @@ final class ProfileRolesView {
         rolesSection.addView(rolesRow);
     }
 
-    View getRolesView() { return rolesSection; }
+    View getRolesView() {
+        return rolesSection;
+    }
 
     void render(List<String> roleIds, Map<String, Role> allRoles) {
         if (activity == null) return;
@@ -93,5 +97,7 @@ final class ProfileRolesView {
         return chip;
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }

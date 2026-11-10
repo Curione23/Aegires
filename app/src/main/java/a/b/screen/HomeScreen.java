@@ -5,10 +5,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import java.util.ArrayList;
-import java.util.List;
+
 import a.b.MainActivity;
 import a.b.model.Guild;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class HomeScreen implements Screen {
     private MainActivity activity;
@@ -30,17 +32,22 @@ public class HomeScreen implements Screen {
         root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.HORIZONTAL);
 
-        railView = new GuildRailView(activity, guilds, g -> {
-            if (!g.id.equals(selectedGuildId)) {
-                selectedGuildId = g.id;
-                railView.setSelectedGuild(g.id);
-                openChannelList(g);
-            }
-        }, v -> {
-            selectedGuildId = null;
-            railView.setSelectedGuild(null);
-            openDms();
-        });
+        railView =
+                new GuildRailView(
+                        activity,
+                        guilds,
+                        g -> {
+                            if (!g.id.equals(selectedGuildId)) {
+                                selectedGuildId = g.id;
+                                railView.setSelectedGuild(g.id);
+                                openChannelList(g);
+                            }
+                        },
+                        v -> {
+                            selectedGuildId = null;
+                            railView.setSelectedGuild(null);
+                            openDms();
+                        });
         root.addView(railView);
 
         channelContainer = new FrameLayout(activity);
@@ -56,16 +63,20 @@ public class HomeScreen implements Screen {
             guilds.addAll(cached);
             restoreOrSelectFirst();
         } else {
-            activity.apiClient.fetchGuilds(new a.b.api.ApiClient.Callback<List<Guild>>() {
-                @Override public void onSuccess(List<Guild> result) {
-                    if (activity == null) return;
-                    activity.guildCache.put("me", result);
-                    guilds.clear();
-                    guilds.addAll(result);
-                    restoreOrSelectFirst();
-                }
-                @Override public void onError(String message) {}
-            });
+            activity.apiClient.fetchGuilds(
+                    new a.b.api.ApiClient.Callback<List<Guild>>() {
+                        @Override
+                        public void onSuccess(List<Guild> result) {
+                            if (activity == null) return;
+                            activity.guildCache.put("me", result);
+                            guilds.clear();
+                            guilds.addAll(result);
+                            restoreOrSelectFirst();
+                        }
+
+                        @Override
+                        public void onError(String message) {}
+                    });
         }
     }
 
@@ -130,21 +141,32 @@ public class HomeScreen implements Screen {
         channelContainer.removeAllViews();
     }
 
-    @Override public View getView() { return root; }
-    @Override public void onResume() {
+    @Override
+    public View getView() {
+        return root;
+    }
+
+    @Override
+    public void onResume() {
         if (railView != null) railView.onResume();
         if (channelScreen != null) channelScreen.onResume();
         if (dmScreen != null) dmScreen.onResume();
     }
-    @Override public void onPause() {
+
+    @Override
+    public void onPause() {
         if (railView != null) railView.onPause();
         if (channelScreen != null) channelScreen.onPause();
         if (dmScreen != null) dmScreen.onPause();
     }
-    @Override public void onDestroy() {
+
+    @Override
+    public void onDestroy() {
         if (railView != null) railView.onPause();
         cleanupMiddlePane();
         activity = null;
     }
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
 }

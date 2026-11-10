@@ -22,8 +22,10 @@ public class TimeUtils {
         Calendar then = Calendar.getInstance();
         then.setTimeInMillis(epochMs);
         String clock = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(epochMs));
-        long dayDiff = Math.round((startOfDayMillis(now) - startOfDayMillis(then))
-                / (double) TimeUnit.DAYS.toMillis(1));
+        long dayDiff =
+                Math.round(
+                        (startOfDayMillis(now) - startOfDayMillis(then))
+                                / (double) TimeUnit.DAYS.toMillis(1));
         if (dayDiff == 0) return "Today at " + clock;
         if (dayDiff == 1) return "Yesterday at " + clock;
         return DateFormat.getDateInstance(DateFormat.SHORT).format(new Date(epochMs));

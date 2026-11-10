@@ -9,6 +9,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import a.b.MainActivity;
 import a.b.model.DiscordUser;
 import a.b.util.Ui;
@@ -30,31 +31,49 @@ final class ProfileHeaderView {
         this.activity = activity;
         this.header = buildHeader(userId);
         this.nameBlock = buildNameBlock();
-        String cached = (activity != null && userId != null) ? activity.userNameCache.get(userId) : null;
+        String cached =
+                (activity != null && userId != null) ? activity.userNameCache.get(userId) : null;
         if (Ui.isReal(cached)) nameTv.setText(cached);
     }
 
-    View getHeaderView() { return header; }
-    View getNameBlock() { return nameBlock; }
+    View getHeaderView() {
+        return header;
+    }
+
+    View getNameBlock() {
+        return nameBlock;
+    }
 
     void renderUser(DiscordUser user) {
         if (user == null || activity == null) return;
         botTag.setVisibility(user.bot ? View.VISIBLE : View.GONE);
-        
+
         boolean hasAvatar = Ui.isReal(user.avatar) && user.id != null;
-        
+
         inner.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : Ui.avatarColor(user.id)));
         avatarIcon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         avatarIv.setVisibility(hasAvatar ? View.VISIBLE : View.GONE);
 
         if (Ui.isReal(user.banner) && user.id != null) {
-            activity.imageLoader.load("https://cdn.discordapp.com/banners/" + user.id + "/" + user.banner + ".png?size=600", bannerIv);
+            activity.imageLoader.load(
+                    "https://cdn.discordapp.com/banners/"
+                            + user.id
+                            + "/"
+                            + user.banner
+                            + ".png?size=600",
+                    bannerIv);
         } else if (user.accentColor != 0) {
             bannerIv.setBackgroundColor(user.accentColor | 0xFF000000);
         }
-        
+
         if (hasAvatar) {
-            activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + user.id + "/" + user.avatar + ".png?size=256", avatarIv);
+            activity.imageLoader.load(
+                    "https://cdn.discordapp.com/avatars/"
+                            + user.id
+                            + "/"
+                            + user.avatar
+                            + ".png?size=256",
+                    avatarIv);
         } else {
             avatarIv.setImageDrawable(null);
         }
@@ -82,18 +101,19 @@ final class ProfileHeaderView {
         FrameLayout ring = new FrameLayout(activity);
         ring.setBackground(Ui.oval(Ui.BG_SECONDARY));
         ring.setPadding(dp(AVATAR_RING), dp(AVATAR_RING), dp(AVATAR_RING), dp(AVATAR_RING));
-        FrameLayout.LayoutParams ringLp = new FrameLayout.LayoutParams(outer, outer, Gravity.TOP | Gravity.START);
+        FrameLayout.LayoutParams ringLp =
+                new FrameLayout.LayoutParams(outer, outer, Gravity.TOP | Gravity.START);
         ringLp.leftMargin = dp(16);
         ringLp.topMargin = dp(BANNER_H - AVATAR / 2);
 
         inner = new FrameLayout(activity);
         inner.setBackground(Ui.oval(Ui.avatarColor(userId)));
         inner.setClipToOutline(true);
-        
+
         avatarIcon = Ui.iconView(activity, Ui.I_USER, Color.WHITE, 48);
         avatarIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         inner.addView(avatarIcon, new FrameLayout.LayoutParams(-1, -1));
-        
+
         avatarIv = new ImageView(activity);
         avatarIv.setScaleType(ImageView.ScaleType.CENTER_CROP);
         inner.addView(avatarIv, new FrameLayout.LayoutParams(-1, -1));
@@ -135,5 +155,7 @@ final class ProfileHeaderView {
         return block;
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }

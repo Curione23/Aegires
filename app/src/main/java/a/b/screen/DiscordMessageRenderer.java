@@ -20,17 +20,19 @@ import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.text.style.URLSpan;
 import android.view.View;
+
+import a.b.model.Message;
+import a.b.model.Role;
+import a.b.util.DiscordMarkdown;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Matcher;
 import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import a.b.model.Message;
-import a.b.model.Role;
-import a.b.util.DiscordMarkdown;
 
 /** Parses message text into a styled, mention-resolved, emoji-inlined Spannable. */
 final class DiscordMessageRenderer {
@@ -40,17 +42,28 @@ final class DiscordMessageRenderer {
     private static final Pattern CHANNEL_MENTION = Pattern.compile("<#(\\d+)>");
     private static final Pattern EVERYONE_HERE = Pattern.compile("(?<![\\w@])@(everyone|here)\\b");
     private static final Pattern TIMESTAMP = Pattern.compile("<t:(-?\\d{1,12})(?::([tTdDfFR]))?>");
-    private static final Pattern SLASH_COMMAND = Pattern.compile("</([\\w-]+(?: [\\w-]+){0,2}):\\d+>");
-    private static final Pattern GUILD_NAV = Pattern.compile("<id:(customize|browse|guide|linked-roles)>");
+    private static final Pattern SLASH_COMMAND =
+            Pattern.compile("</([\\w-]+(?: [\\w-]+){0,2}):\\d+>");
+    private static final Pattern GUILD_NAV =
+            Pattern.compile("<id:(customize|browse|guide|linked-roles)>");
 
     private static final String STYLES = "tTdDfF";
     private static final String[] DATE_PATTERNS = {
-        "HH:mm", "HH:mm:ss", "dd/MM/yyyy", "dd MMMM yyyy",
-        "dd MMMM yyyy HH:mm", "EEEE, dd MMMM yyyy HH:mm"
+        "HH:mm",
+        "HH:mm:ss",
+        "dd/MM/yyyy",
+        "dd MMMM yyyy",
+        "dd MMMM yyyy HH:mm",
+        "EEEE, dd MMMM yyyy HH:mm"
     };
 
-    private interface Text { CharSequence of(MatchResult m); }
-    private interface Styler { void apply(SpannableStringBuilder sb, int start, int end, MatchResult m); }
+    private interface Text {
+        CharSequence of(MatchResult m);
+    }
+
+    private interface Styler {
+        void apply(SpannableStringBuilder sb, int start, int end, MatchResult m);
+    }
 
     private final MessageAdapter adapter;
 
@@ -58,11 +71,14 @@ final class DiscordMessageRenderer {
         this.adapter = adapter;
     }
 
-    CharSequence render(String raw, Message msg) { return render(raw, msg, true); }
+    CharSequence render(String raw, Message msg) {
+        return render(raw, msg, true);
+    }
 
     CharSequence render(String raw, Message msg, boolean markdown) {
         if (raw == null || raw.isEmpty()) return "";
-        SpannableStringBuilder sb = markdown ? DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
+        SpannableStringBuilder sb =
+                markdown ? DiscordMarkdown.parse(raw) : new SpannableStringBuilder(raw);
         int jumbo = markdown ? emojiOnly(raw) : 0;
         if (msg.id != null) emojis(sb, msg.id, jumbo != 0);
         mentions(sb, msg);
@@ -72,10 +88,23 @@ final class DiscordMessageRenderer {
     }
 
     private static boolean isEmojiCodePoint(int cp) {
-        return (cp >= 0x1F000 && cp <= 0x1FAFF) || (cp >= 0x2190 && cp <= 0x21FF) || (cp >= 0x2300 && cp <= 0x23FF)
-            || (cp >= 0x2600 && cp <= 0x27BF) || (cp >= 0x2900 && cp <= 0x297F) || (cp >= 0x2B00 && cp <= 0x2BFF)
-            || cp == 0xA9 || cp == 0xAE || cp == 0x203C || cp == 0x2049 || cp == 0x2122 || cp == 0x2139
-            || cp == 0x24C2 || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299;
+        return (cp >= 0x1F000 && cp <= 0x1FAFF)
+                || (cp >= 0x2190 && cp <= 0x21FF)
+                || (cp >= 0x2300 && cp <= 0x23FF)
+                || (cp >= 0x2600 && cp <= 0x27BF)
+                || (cp >= 0x2900 && cp <= 0x297F)
+                || (cp >= 0x2B00 && cp <= 0x2BFF)
+                || cp == 0xA9
+                || cp == 0xAE
+                || cp == 0x203C
+                || cp == 0x2049
+                || cp == 0x2122
+                || cp == 0x2139
+                || cp == 0x24C2
+                || cp == 0x3030
+                || cp == 0x303D
+                || cp == 0x3297
+                || cp == 0x3299;
     }
 
     private static int emojiOnly(String raw) {
@@ -86,8 +115,12 @@ final class DiscordMessageRenderer {
             int cp = t.codePointAt(i);
             i += Character.charCount(cp);
             if (Character.isWhitespace(cp)) continue;
-            if (cp == 0x1) { count++; continue; }
-            if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || (cp >= 0x1F3FB && cp <= 0x1F3FF)) continue;
+            if (cp == 0x1) {
+                count++;
+                continue;
+            }
+            if (cp == 0x200D || cp == 0xFE0F || cp == 0x20E3 || (cp >= 0x1F3FB && cp <= 0x1F3FF))
+                continue;
             if (!isEmojiCodePoint(cp)) return 0;
             count++;
             unicode = true;
@@ -98,84 +131,149 @@ final class DiscordMessageRenderer {
 
     private void emojis(SpannableStringBuilder sb, String msgId, boolean jumbo) {
         final int size = jumbo ? adapter.jumboSize : adapter.emojiSize;
-        sub(sb, CUSTOM_EMOJI, m -> " ", (b, s, e, m) -> {
-            String id = m.group(1);
-            Bitmap bmp = adapter.emojiRegistry.get(id);
-            Drawable d;
-            if (bmp != null) {
-                d = new BitmapDrawable(adapter.activity.getResources(), bmp);
-            } else {
-                d = new ColorDrawable(Color.TRANSPARENT);
-                adapter.emojiRegistry.track(id, msgId);
-                boolean animated = m.group().charAt(1) == 'a';
-                adapter.emojiRegistry.load(id, MessageAdapter.CDN + "emojis/" + id + (animated ? ".gif" : ".png") + "?size=128");
-            }
-            d.setBounds(0, 0, size, size);
-            span(b, s, e, new ImageSpan(d, ImageSpan.ALIGN_BOTTOM));
-        });
+        sub(
+                sb,
+                CUSTOM_EMOJI,
+                m -> " ",
+                (b, s, e, m) -> {
+                    String id = m.group(1);
+                    Bitmap bmp = adapter.emojiRegistry.get(id);
+                    Drawable d;
+                    if (bmp != null) {
+                        d = new BitmapDrawable(adapter.activity.getResources(), bmp);
+                    } else {
+                        d = new ColorDrawable(Color.TRANSPARENT);
+                        adapter.emojiRegistry.track(id, msgId);
+                        boolean animated = m.group().charAt(1) == 'a';
+                        adapter.emojiRegistry.load(
+                                id,
+                                MessageAdapter.CDN
+                                        + "emojis/"
+                                        + id
+                                        + (animated ? ".gif" : ".png")
+                                        + "?size=128");
+                    }
+                    d.setBounds(0, 0, size, size);
+                    span(b, s, e, new ImageSpan(d, ImageSpan.ALIGN_BOTTOM));
+                });
     }
 
     private void mentions(SpannableStringBuilder sb, Message msg) {
-        Styler chip = (b, s, e, m) -> span(b, s, e,
-            new ForegroundColorSpan(MessageAdapter.MENTION_FG),
-            new BackgroundColorSpan(MessageAdapter.MENTION_BG));
-        sub(sb, CHANNEL_MENTION, m -> "#" + adapter.mentionRegistry.resolveChannel(m.group(1)), chip);
-        sub(sb, ROLE_MENTION, m -> {
-            Role role = adapter.activity != null && adapter.activity.roleCache != null
-                ? adapter.activity.roleCache.get(m.group(1)) : null;
-            return "@" + (role != null && isReal(role.name) ? role.name : "role");
-        }, chip);
-        sub(sb, USER_MENTION, m -> "@" + adapter.mentionRegistry.resolveUser(m.group(1), msg), (b, s, e, m) -> {
-            chip.apply(b, s, e, m);
-            String id = m.group(1);
-            span(b, s, e, new Click(() -> openProfile(id)));
-        });
+        Styler chip =
+                (b, s, e, m) ->
+                        span(
+                                b,
+                                s,
+                                e,
+                                new ForegroundColorSpan(MessageAdapter.MENTION_FG),
+                                new BackgroundColorSpan(MessageAdapter.MENTION_BG));
+        sub(
+                sb,
+                CHANNEL_MENTION,
+                m -> "#" + adapter.mentionRegistry.resolveChannel(m.group(1)),
+                chip);
+        sub(
+                sb,
+                ROLE_MENTION,
+                m -> {
+                    Role role =
+                            adapter.activity != null && adapter.activity.roleCache != null
+                                    ? adapter.activity.roleCache.get(m.group(1))
+                                    : null;
+                    return "@" + (role != null && isReal(role.name) ? role.name : "role");
+                },
+                chip);
+        sub(
+                sb,
+                USER_MENTION,
+                m -> "@" + adapter.mentionRegistry.resolveUser(m.group(1), msg),
+                (b, s, e, m) -> {
+                    chip.apply(b, s, e, m);
+                    String id = m.group(1);
+                    span(b, s, e, new Click(() -> openProfile(id)));
+                });
         sub(sb, SLASH_COMMAND, m -> "/" + m.group(1), chip);
-        sub(sb, GUILD_NAV, m -> {
-            switch (m.group(1)) {
-                case "customize": return "Channels & Roles";
-                case "browse": return "Browse Channels";
-                case "guide": return "Server Guide";
-                default: return "Linked Roles";
-            }
-        }, chip);
-        wrap(sb, EVERYONE_HERE, 0, (b, s, e, m) -> span(b, s, e,
-            new ForegroundColorSpan(MessageAdapter.EVERYONE_FG),
-            new BackgroundColorSpan(MessageAdapter.EVERYONE_BG),
-            new StyleSpan(Typeface.BOLD)));
+        sub(
+                sb,
+                GUILD_NAV,
+                m -> {
+                    switch (m.group(1)) {
+                        case "customize":
+                            return "Channels & Roles";
+                        case "browse":
+                            return "Browse Channels";
+                        case "guide":
+                            return "Server Guide";
+                        default:
+                            return "Linked Roles";
+                    }
+                },
+                chip);
+        wrap(
+                sb,
+                EVERYONE_HERE,
+                0,
+                (b, s, e, m) ->
+                        span(
+                                b,
+                                s,
+                                e,
+                                new ForegroundColorSpan(MessageAdapter.EVERYONE_FG),
+                                new BackgroundColorSpan(MessageAdapter.EVERYONE_BG),
+                                new StyleSpan(Typeface.BOLD)));
     }
 
     private void openProfile(String uid) {
-        if (uid != null && adapter.activity != null) adapter.activity.navigate(new ProfileScreen(uid, adapter.guildId));
+        if (uid != null && adapter.activity != null)
+            adapter.activity.navigate(new ProfileScreen(uid, adapter.guildId));
     }
 
     private static Long timestampMillis(String seconds) {
-        try { return Math.multiplyExact(Long.parseLong(seconds), 1000L); }
-        catch (NumberFormatException | ArithmeticException ex) { return null; }
+        try {
+            return Math.multiplyExact(Long.parseLong(seconds), 1000L);
+        } catch (NumberFormatException | ArithmeticException ex) {
+            return null;
+        }
     }
 
     private void timestamps(SpannableStringBuilder sb) {
-        sub(sb, TIMESTAMP, match -> {
-            Long millis = timestampMillis(match.group(1));
-            return millis == null ? match.group() : formatTimestamp(millis, match.group(2));
-        }, (b, s, e, match) -> {
-            Long millis = timestampMillis(match.group(1));
-            if (millis == null) return;
-            span(b, s, e, new ForegroundColorSpan(MessageAdapter.LINK_FG), new Click(() -> {
-                if (adapter.activity != null) {
-                    adapter.activity.toast(java.text.DateFormat.getDateTimeInstance(
-                        java.text.DateFormat.LONG, java.text.DateFormat.LONG).format(new Date(millis)));
-                }
-            }));
-        });
+        sub(
+                sb,
+                TIMESTAMP,
+                match -> {
+                    Long millis = timestampMillis(match.group(1));
+                    return millis == null ? match.group() : formatTimestamp(millis, match.group(2));
+                },
+                (b, s, e, match) -> {
+                    Long millis = timestampMillis(match.group(1));
+                    if (millis == null) return;
+                    span(
+                            b,
+                            s,
+                            e,
+                            new ForegroundColorSpan(MessageAdapter.LINK_FG),
+                            new Click(
+                                    () -> {
+                                        if (adapter.activity != null) {
+                                            adapter.activity.toast(
+                                                    java.text.DateFormat.getDateTimeInstance(
+                                                                    java.text.DateFormat.LONG,
+                                                                    java.text.DateFormat.LONG)
+                                                            .format(new Date(millis)));
+                                        }
+                                    }));
+                });
     }
 
     private static String formatTimestamp(long millis, String style) {
         if ("R".equals(style)) {
-            return DateUtils.getRelativeTimeSpanString(millis, System.currentTimeMillis(), DateUtils.SECOND_IN_MILLIS).toString();
+            return DateUtils.getRelativeTimeSpanString(
+                            millis, System.currentTimeMillis(), DateUtils.SECOND_IN_MILLIS)
+                    .toString();
         }
         int index = style == null ? -1 : STYLES.indexOf(style);
-        return new SimpleDateFormat(DATE_PATTERNS[index < 0 ? 4 : index], Locale.US).format(new Date(millis));
+        return new SimpleDateFormat(DATE_PATTERNS[index < 0 ? 4 : index], Locale.US)
+                .format(new Date(millis));
     }
 
     private static void span(Spannable sb, int start, int end, Object... spans) {
@@ -216,7 +314,8 @@ final class DiscordMessageRenderer {
             Object[] spans = sb.getSpans(start, end, Object.class);
             int[] flags = new int[spans.length];
             for (int i = 0; i < spans.length; i++) {
-                boolean inside = sb.getSpanStart(spans[i]) >= start && sb.getSpanEnd(spans[i]) <= end;
+                boolean inside =
+                        sb.getSpanStart(spans[i]) >= start && sb.getSpanEnd(spans[i]) <= end;
                 flags[i] = inside ? sb.getSpanFlags(spans[i]) : -1;
             }
             sb.replace(start, end, r);
@@ -227,12 +326,25 @@ final class DiscordMessageRenderer {
         }
     }
 
-    private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
+    private static boolean isReal(String s) {
+        return s != null && !s.isEmpty() && !"null".equals(s);
+    }
 
     private static final class Click extends ClickableSpan {
         private final Runnable action;
-        Click(Runnable action) { this.action = action; }
-        @Override public void onClick(View v) { action.run(); }
-        @Override public void updateDrawState(TextPaint ds) { ds.setUnderlineText(false); }
+
+        Click(Runnable action) {
+            this.action = action;
+        }
+
+        @Override
+        public void onClick(View v) {
+            action.run();
+        }
+
+        @Override
+        public void updateDrawState(TextPaint ds) {
+            ds.setUnderlineText(false);
+        }
     }
 }

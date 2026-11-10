@@ -2,6 +2,12 @@ package a.b.util;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+
+import a.b.model.MentionItem;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -9,13 +15,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import a.b.model.MentionItem;
 
 /** Main-thread-only inbox of mentions plus per-DM unread counters. */
 public final class MentionStore {
-    public interface Listener { void onMentionsChanged(); }
+    public interface Listener {
+        void onMentionsChanged();
+    }
 
     private static final String PREFS = "mentions";
     private static final String KEY_LAST_READ = "last_read";
@@ -41,14 +46,27 @@ public final class MentionStore {
     }
 
     private void savePrefs() {
-        prefs.edit().putString(KEY_LAST_READ, lastRead).putStringSet(KEY_READ_IDS, new HashSet<>(readIds)).apply();
+        prefs.edit()
+                .putString(KEY_LAST_READ, lastRead)
+                .putStringSet(KEY_READ_IDS, new HashSet<>(readIds))
+                .apply();
     }
 
-    public void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
-    public void removeListener(Listener l) { listeners.remove(l); }
-    private void fire() { for (Listener l : listeners) l.onMentionsChanged(); }
+    public void addListener(Listener l) {
+        if (!listeners.contains(l)) listeners.add(l);
+    }
 
-    public List<MentionItem> items() { return new ArrayList<>(items); }
+    public void removeListener(Listener l) {
+        listeners.remove(l);
+    }
+
+    private void fire() {
+        for (Listener l : listeners) l.onMentionsChanged();
+    }
+
+    public List<MentionItem> items() {
+        return new ArrayList<>(items);
+    }
 
     public int unreadCount() {
         int n = 0;
@@ -73,7 +91,8 @@ public final class MentionStore {
         if (d == null || selfId == null) return;
         String channelId = d.optString("channel_id", null);
         JSONObject author = d.optJSONObject("author");
-        if (channelId == null || author == null || selfId.equals(author.optString("id", null))) return;
+        if (channelId == null || author == null || selfId.equals(author.optString("id", null)))
+            return;
         if (channelId.equals(viewingChannelId)) return;
 
         boolean dm = !d.has("guild_id") || d.isNull("guild_id");
@@ -87,7 +106,10 @@ public final class MentionStore {
         JSONArray ms = d.optJSONArray("mentions");
         for (int i = 0; ms != null && i < ms.length(); i++) {
             JSONObject u = ms.optJSONObject(i);
-            if (u != null && selfId.equals(u.optString("id", null))) { mentioned = true; break; }
+            if (u != null && selfId.equals(u.optString("id", null))) {
+                mentioned = true;
+                break;
+            }
         }
         if (!mentioned) return;
         try {
@@ -97,7 +119,8 @@ public final class MentionStore {
             items.add(0, item);
             trim();
             fire();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     public void mergeRemote(List<MentionItem> remote) {
@@ -122,7 +145,11 @@ public final class MentionStore {
 
     public void remove(String messageId) {
         for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).id.equals(messageId)) { items.remove(i); fire(); return; }
+            if (items.get(i).id.equals(messageId)) {
+                items.remove(i);
+                fire();
+                return;
+            }
         }
     }
 

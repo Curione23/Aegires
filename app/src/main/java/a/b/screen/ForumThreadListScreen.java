@@ -16,6 +16,13 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import a.b.MainActivity;
+import a.b.api.ApiClient;
+import a.b.model.Channel;
+import a.b.util.PermissionUtil;
+import a.b.util.Ui;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -23,11 +30,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import a.b.MainActivity;
-import a.b.api.ApiClient;
-import a.b.model.Channel;
-import a.b.util.PermissionUtil;
-import a.b.util.Ui;
 
 /** Forum channel browser with search, latest-activity ordering and thread creation. */
 public class ForumThreadListScreen implements Screen {
@@ -73,7 +75,8 @@ public class ForumThreadListScreen implements Screen {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.BG_SECONDARY);
 
-        String title = forum != null && forum.name != null && !forum.name.isEmpty() ? forum.name : "Forum";
+        String title =
+                forum != null && forum.name != null && !forum.name.isEmpty() ? forum.name : "Forum";
         bar = new Ui.AppBar(activity, title, Ui.BG_SECONDARY, activity::goBack);
         bar.setSubtitle(threadListLabel());
         if (forum != null && forum.canCreateThreads) {
@@ -93,16 +96,23 @@ public class ForumThreadListScreen implements Screen {
         search.setHintTextColor(Ui.MUTED);
         search.setBackground(Ui.rounded(Ui.BG_INPUT, dp(8)));
         search.setPadding(dp(12), dp(8), dp(12), dp(8));
-        search.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override public void afterTextChanged(Editable s) {
-                query = s == null ? "" : s.toString().trim();
-                if (activity == null || destroyed) return;
-                activity.handler.removeCallbacks(searchRunnable);
-                activity.handler.postDelayed(searchRunnable, 350);
-            }
-        });
+        search.addTextChangedListener(
+                new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(
+                            CharSequence s, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        query = s == null ? "" : s.toString().trim();
+                        if (activity == null || destroyed) return;
+                        activity.handler.removeCallbacks(searchRunnable);
+                        activity.handler.postDelayed(searchRunnable, 350);
+                    }
+                });
         searchWrap.addView(search, new LinearLayout.LayoutParams(-1, -2));
         root.addView(searchWrap, new LinearLayout.LayoutParams(-1, -2));
 
@@ -112,12 +122,15 @@ public class ForumThreadListScreen implements Screen {
         listContainer.setOrientation(LinearLayout.VERTICAL);
         listContainer.setPadding(0, dp(4), 0, dp(16));
         scrollView.addView(listContainer, new ViewGroup.LayoutParams(-1, -2));
-        scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
-            View content = scrollView.getChildAt(0);
-            if (content != null && scrollY + scrollView.getHeight() >= content.getMeasuredHeight() - dp(240)) {
-                loadMoreThreads();
-            }
-        });
+        scrollView.setOnScrollChangeListener(
+                (v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                    View content = scrollView.getChildAt(0);
+                    if (content != null
+                            && scrollY + scrollView.getHeight()
+                                    >= content.getMeasuredHeight() - dp(240)) {
+                        loadMoreThreads();
+                    }
+                });
         root.addView(scrollView, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         render();
@@ -137,17 +150,21 @@ public class ForumThreadListScreen implements Screen {
     private void ensureCreatePermission() {
         if (activity == null || forum == null || forum.id == null || forum.canCreateThreads) return;
         if (forum.type != 15 && forum.type != 16) return;
-        activity.apiClient.fetchMyChannelPermissions(forum.id, new ApiClient.Callback<Long>() {
-            @Override public void onSuccess(Long permissions) {
-                if (activity == null || destroyed || permissions == null) return;
-                if ((permissions & PermissionUtil.SEND_MESSAGES) == 0) return;
-                forum.canCreateThreads = true;
-                if (bar != null) bar.addAction(Ui.I_PLUS, v -> showNewThreadDialog());
-                render();
-            }
+        activity.apiClient.fetchMyChannelPermissions(
+                forum.id,
+                new ApiClient.Callback<Long>() {
+                    @Override
+                    public void onSuccess(Long permissions) {
+                        if (activity == null || destroyed || permissions == null) return;
+                        if ((permissions & PermissionUtil.SEND_MESSAGES) == 0) return;
+                        forum.canCreateThreads = true;
+                        if (bar != null) bar.addAction(Ui.I_PLUS, v -> showNewThreadDialog());
+                        render();
+                    }
 
-            @Override public void onError(String message) {}
-        });
+                    @Override
+                    public void onError(String message) {}
+                });
     }
 
     private void reloadThreads() {
@@ -164,47 +181,66 @@ public class ForumThreadListScreen implements Screen {
     }
 
     private void loadThreads() {
-        if (activity == null || destroyed || forum == null || forum.id == null || loading || loadingMore) return;
+        if (activity == null
+                || destroyed
+                || forum == null
+                || forum.id == null
+                || loading
+                || loadingMore) return;
         final int generation = ++loadGeneration;
         loading = true;
         error = null;
         updateSubtitle();
         if (threads == null) render();
-        activity.apiClient.fetchForumThreads(forum.id, 0, query, new ApiClient.Callback<ApiClient.ThreadPage>() {
-            @Override public void onSuccess(ApiClient.ThreadPage page) {
-                if (activity == null || destroyed || generation != loadGeneration) return;
-                loading = false;
-                threads = page == null || page.threads == null ? new ArrayList<>() : page.threads;
-                hasMoreThreads = page != null && page.hasMore;
-                nextOffset = page == null ? 0 : page.nextOffset;
-                totalResults = page == null ? -1 : page.totalResults;
-                cacheThreadNames(threads);
-                error = null;
-                render();
-                if (query.isEmpty() && hasMoreThreads && !containsPinned(threads)) {
-                    loadPinnedThread(generation);
-                }
-            }
+        activity.apiClient.fetchForumThreads(
+                forum.id,
+                0,
+                query,
+                new ApiClient.Callback<ApiClient.ThreadPage>() {
+                    @Override
+                    public void onSuccess(ApiClient.ThreadPage page) {
+                        if (activity == null || destroyed || generation != loadGeneration) return;
+                        loading = false;
+                        threads =
+                                page == null || page.threads == null
+                                        ? new ArrayList<>()
+                                        : page.threads;
+                        hasMoreThreads = page != null && page.hasMore;
+                        nextOffset = page == null ? 0 : page.nextOffset;
+                        totalResults = page == null ? -1 : page.totalResults;
+                        cacheThreadNames(threads);
+                        error = null;
+                        render();
+                        if (query.isEmpty() && hasMoreThreads && !containsPinned(threads)) {
+                            loadPinnedThread(generation);
+                        }
+                    }
 
-            @Override public void onError(String message) {
-                if (activity == null || destroyed || generation != loadGeneration) return;
-                loading = false;
-                error = message;
-                render();
-            }
-        });
+                    @Override
+                    public void onError(String message) {
+                        if (activity == null || destroyed || generation != loadGeneration) return;
+                        loading = false;
+                        error = message;
+                        render();
+                    }
+                });
     }
 
     private void loadPinnedThread(final int generation) {
         if (activity == null || forum == null || forum.id == null) return;
-        activity.apiClient.fetchPinnedForumThread(guildId, forum.id, new ApiClient.Callback<Channel>() {
-            @Override public void onSuccess(Channel pinned) {
-                if (activity == null || destroyed || generation != loadGeneration) return;
-                if (mergePinnedThread(pinned)) render();
-            }
+        activity.apiClient.fetchPinnedForumThread(
+                guildId,
+                forum.id,
+                new ApiClient.Callback<Channel>() {
+                    @Override
+                    public void onSuccess(Channel pinned) {
+                        if (activity == null || destroyed || generation != loadGeneration) return;
+                        if (mergePinnedThread(pinned)) render();
+                    }
 
-            @Override public void onError(String message) {}
-        });
+                    @Override
+                    public void onError(String message) {}
+                });
     }
 
     private boolean containsPinned(List<Channel> list) {
@@ -227,43 +263,55 @@ public class ForumThreadListScreen implements Screen {
             }
         }
         threads.add(0, pinned);
-        if (activity != null && pinned.name != null) activity.channelNameCache.put(pinned.id, pinned.name);
+        if (activity != null && pinned.name != null)
+            activity.channelNameCache.put(pinned.id, pinned.name);
         return true;
     }
 
     private void loadMoreThreads() {
-        if (activity == null || destroyed || loading || loadingMore || !hasMoreThreads
-                || forum == null || forum.id == null) return;
+        if (activity == null
+                || destroyed
+                || loading
+                || loadingMore
+                || !hasMoreThreads
+                || forum == null
+                || forum.id == null) return;
         final int generation = loadGeneration;
         final int offset = nextOffset;
         final int scrollY = scrollView != null ? scrollView.getScrollY() : 0;
         loadingMore = true;
         render();
         restoreScroll(scrollY);
-        activity.apiClient.fetchForumThreads(forum.id, offset, query, new ApiClient.Callback<ApiClient.ThreadPage>() {
-            @Override public void onSuccess(ApiClient.ThreadPage page) {
-                if (activity == null || destroyed || generation != loadGeneration) return;
-                loadingMore = false;
-                if (page != null) {
-                    appendThreads(page.threads);
-                    hasMoreThreads = page.hasMore;
-                    nextOffset = page.nextOffset;
-                    if (page.totalResults >= 0) totalResults = page.totalResults;
-                } else {
-                    hasMoreThreads = false;
-                }
-                render();
-                restoreScroll(scrollY);
-            }
+        activity.apiClient.fetchForumThreads(
+                forum.id,
+                offset,
+                query,
+                new ApiClient.Callback<ApiClient.ThreadPage>() {
+                    @Override
+                    public void onSuccess(ApiClient.ThreadPage page) {
+                        if (activity == null || destroyed || generation != loadGeneration) return;
+                        loadingMore = false;
+                        if (page != null) {
+                            appendThreads(page.threads);
+                            hasMoreThreads = page.hasMore;
+                            nextOffset = page.nextOffset;
+                            if (page.totalResults >= 0) totalResults = page.totalResults;
+                        } else {
+                            hasMoreThreads = false;
+                        }
+                        render();
+                        restoreScroll(scrollY);
+                    }
 
-            @Override public void onError(String message) {
-                if (activity == null || destroyed || generation != loadGeneration) return;
-                loadingMore = false;
-                activity.toast("Couldn't load more threads: " + message);
-                render();
-                restoreScroll(scrollY);
-            }
-        });
+                    @Override
+                    public void onError(String message) {
+                        if (activity == null || destroyed || generation != loadGeneration) return;
+                        loadingMore = false;
+                        activity.toast("Couldn't load more threads: " + message);
+                        render();
+                        restoreScroll(scrollY);
+                    }
+                });
     }
 
     private void appendThreads(List<Channel> extra) {
@@ -300,7 +348,12 @@ public class ForumThreadListScreen implements Screen {
 
         if (error != null && threads == null) {
             TextView retry = Ui.emptyState(activity, "Couldn't load threads.\nTap to retry.");
-            retry.setOnClickListener(v -> { error = null; render(); loadThreads(); });
+            retry.setOnClickListener(
+                    v -> {
+                        error = null;
+                        render();
+                        loadThreads();
+                    });
             listContainer.addView(retry);
             return;
         }
@@ -311,7 +364,8 @@ public class ForumThreadListScreen implements Screen {
         if (threads.isEmpty()) {
             String empty;
             if (!query.isEmpty()) empty = "No threads match your search.";
-            else if (forum != null && forum.canCreateThreads) empty = "No threads here yet.\nTap + to start the first one.";
+            else if (forum != null && forum.canCreateThreads)
+                empty = "No threads here yet.\nTap + to start the first one.";
             else empty = "No threads here yet.";
             listContainer.addView(Ui.emptyState(activity, empty));
             return;
@@ -323,10 +377,16 @@ public class ForumThreadListScreen implements Screen {
         }
         sortThreads(ordered);
         if (error != null) {
-            TextView retry = Ui.text(activity, "Couldn't refresh \u00B7 Tap to retry", Ui.YELLOW, 12);
+            TextView retry =
+                    Ui.text(activity, "Couldn't refresh \u00B7 Tap to retry", Ui.YELLOW, 12);
             retry.setGravity(Gravity.CENTER);
             retry.setPadding(dp(16), dp(10), dp(16), dp(10));
-            retry.setOnClickListener(v -> { error = null; render(); loadThreads(); });
+            retry.setOnClickListener(
+                    v -> {
+                        error = null;
+                        render();
+                        loadThreads();
+                    });
             listContainer.addView(retry);
         }
         addSection(query.isEmpty() ? "Threads" : "Results", ordered);
@@ -335,9 +395,12 @@ public class ForumThreadListScreen implements Screen {
 
     private void addLoadMoreFooter() {
         if (!hasMoreThreads) return;
-        TextView more = Ui.text(activity,
-            loadingMore ? "Loading more threads\u2026" : "Load more threads",
-            loadingMore ? Ui.MUTED : Ui.LINK, 13);
+        TextView more =
+                Ui.text(
+                        activity,
+                        loadingMore ? "Loading more threads\u2026" : "Load more threads",
+                        loadingMore ? Ui.MUTED : Ui.LINK,
+                        13);
         more.setGravity(Gravity.CENTER);
         more.setPadding(dp(16), dp(16), dp(16), dp(16));
         if (!loadingMore) more.setOnClickListener(v -> loadMoreThreads());
@@ -376,13 +439,16 @@ public class ForumThreadListScreen implements Screen {
             list.addAll(rest);
             return;
         }
-        Collections.sort(list, (a, b) -> {
-            if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-            if (a.lastActivity != b.lastActivity) return Long.compare(b.lastActivity, a.lastActivity);
-            String ai = a.id == null ? "" : a.id;
-            String bi = b.id == null ? "" : b.id;
-            return bi.compareTo(ai);
-        });
+        Collections.sort(
+                list,
+                (a, b) -> {
+                    if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+                    if (a.lastActivity != b.lastActivity)
+                        return Long.compare(b.lastActivity, a.lastActivity);
+                    String ai = a.id == null ? "" : a.id;
+                    String bi = b.id == null ? "" : b.id;
+                    return bi.compareTo(ai);
+                });
     }
 
     private String threadListLabel() {
@@ -423,8 +489,12 @@ public class ForumThreadListScreen implements Screen {
 
         final Set<String> selectedTags = new HashSet<>();
         if (!forum.availableTags.isEmpty()) {
-            TextView tagLabel = Ui.text(activity,
-                forum.requireTag ? "Tags (required)" : "Tags (optional)", Ui.MUTED, 12);
+            TextView tagLabel =
+                    Ui.text(
+                            activity,
+                            forum.requireTag ? "Tags (required)" : "Tags (optional)",
+                            Ui.MUTED,
+                            12);
             LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-1, -2);
             labelLp.topMargin = dp(12);
             box.addView(tagLabel, labelLp);
@@ -445,72 +515,94 @@ public class ForumThreadListScreen implements Screen {
                 chipLp.setMarginEnd(dp(8));
                 chip.setLayoutParams(chipLp);
                 styleTagChip(chip, tag, false);
-                chip.setOnClickListener(v -> {
-                    boolean selected = selectedTags.contains(tagId);
-                    if (selected) {
-                        selectedTags.remove(tagId);
-                    } else {
-                        if (selectedTags.size() >= 5) {
-                            activity.toast("You can apply up to 5 tags");
-                            return;
-                        }
-                        selectedTags.add(tagId);
-                    }
-                    styleTagChip(chip, forumTag, !selected);
-                });
+                chip.setOnClickListener(
+                        v -> {
+                            boolean selected = selectedTags.contains(tagId);
+                            if (selected) {
+                                selectedTags.remove(tagId);
+                            } else {
+                                if (selectedTags.size() >= 5) {
+                                    activity.toast("You can apply up to 5 tags");
+                                    return;
+                                }
+                                selectedTags.add(tagId);
+                            }
+                            styleTagChip(chip, forumTag, !selected);
+                        });
                 tagRow.addView(chip);
             }
             tagScroll.addView(tagRow);
             box.addView(tagScroll, new LinearLayout.LayoutParams(-1, -2));
         }
 
-        final AlertDialog dialog = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("New thread")
-            .setView(box)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Create", null)
-            .create();
+        final AlertDialog dialog =
+                new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                        .setTitle("New thread")
+                        .setView(box)
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Create", null)
+                        .create();
 
-        dialog.setOnShowListener(ignored -> {
-            final Button create = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
-            create.setOnClickListener(v -> {
-                String name = titleInput.getText().toString().trim();
-                String content = bodyInput.getText().toString().trim();
-                if (name.isEmpty()) { titleInput.setError("Title is required"); return; }
-                if (content.isEmpty()) { bodyInput.setError("Message is required"); return; }
-                if (forum.requireTag && !forum.availableTags.isEmpty() && selectedTags.isEmpty()) {
-                    activity.toast("Choose at least one tag");
-                    return;
-                }
-                create.setEnabled(false);
-                create.setText("Creating\u2026");
-                activity.apiClient.createForumThread(forum.id, name, content,
-                    new ArrayList<>(selectedTags), new ApiClient.Callback<Channel>() {
-                    @Override public void onSuccess(Channel thread) {
-                        if (activity == null || destroyed) return;
-                        dialog.dismiss();
-                        if (thread == null || thread.id == null) {
-                            loadThreads();
-                            return;
-                        }
-                        if (thread.name != null) activity.channelNameCache.put(thread.id, thread.name);
-                        if (threads != null) {
-                            threads.add(0, thread);
-                            if (totalResults >= 0) totalResults++;
-                            render();
-                        }
-                        activity.navigate(new MessageListScreen(guildId, thread.id));
-                    }
+        dialog.setOnShowListener(
+                ignored -> {
+                    final Button create = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+                    create.setOnClickListener(
+                            v -> {
+                                String name = titleInput.getText().toString().trim();
+                                String content = bodyInput.getText().toString().trim();
+                                if (name.isEmpty()) {
+                                    titleInput.setError("Title is required");
+                                    return;
+                                }
+                                if (content.isEmpty()) {
+                                    bodyInput.setError("Message is required");
+                                    return;
+                                }
+                                if (forum.requireTag
+                                        && !forum.availableTags.isEmpty()
+                                        && selectedTags.isEmpty()) {
+                                    activity.toast("Choose at least one tag");
+                                    return;
+                                }
+                                create.setEnabled(false);
+                                create.setText("Creating\u2026");
+                                activity.apiClient.createForumThread(
+                                        forum.id,
+                                        name,
+                                        content,
+                                        new ArrayList<>(selectedTags),
+                                        new ApiClient.Callback<Channel>() {
+                                            @Override
+                                            public void onSuccess(Channel thread) {
+                                                if (activity == null || destroyed) return;
+                                                dialog.dismiss();
+                                                if (thread == null || thread.id == null) {
+                                                    loadThreads();
+                                                    return;
+                                                }
+                                                if (thread.name != null)
+                                                    activity.channelNameCache.put(
+                                                            thread.id, thread.name);
+                                                if (threads != null) {
+                                                    threads.add(0, thread);
+                                                    if (totalResults >= 0) totalResults++;
+                                                    render();
+                                                }
+                                                activity.navigate(
+                                                        new MessageListScreen(guildId, thread.id));
+                                            }
 
-                    @Override public void onError(String message) {
-                        if (activity == null || destroyed) return;
-                        create.setEnabled(true);
-                        create.setText("Create");
-                        activity.toast("Couldn't create thread: " + message);
-                    }
+                                            @Override
+                                            public void onError(String message) {
+                                                if (activity == null || destroyed) return;
+                                                create.setEnabled(true);
+                                                create.setText("Create");
+                                                activity.toast(
+                                                        "Couldn't create thread: " + message);
+                                            }
+                                        });
+                            });
                 });
-            });
-        });
         dialog.show();
     }
 
@@ -523,7 +615,10 @@ public class ForumThreadListScreen implements Screen {
         input.setBackground(Ui.rounded(Ui.BG_INPUT, dp(8)));
         input.setPadding(dp(12), dp(10), dp(12), dp(10));
         if (lines > 1) {
-            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            input.setInputType(
+                    InputType.TYPE_CLASS_TEXT
+                            | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                            | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
             input.setMinLines(lines);
             input.setMaxLines(6);
             input.setGravity(Gravity.TOP | Gravity.START);
@@ -547,17 +642,25 @@ public class ForumThreadListScreen implements Screen {
         chip.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
     }
 
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) {
+        return (int) (v * density);
+    }
 
-    @Override public View getView() { return view; }
+    @Override
+    public View getView() {
+        return view;
+    }
 
-    @Override public void onResume() {
+    @Override
+    public void onResume() {
         if (activity != null && !destroyed && threads == null) loadThreads();
     }
 
-    @Override public void onPause() {}
+    @Override
+    public void onPause() {}
 
-    @Override public void onDestroy() {
+    @Override
+    public void onDestroy() {
         destroyed = true;
         if (activity != null) activity.handler.removeCallbacks(searchRunnable);
         activity = null;
@@ -570,5 +673,6 @@ public class ForumThreadListScreen implements Screen {
         threads = null;
     }
 
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
 }

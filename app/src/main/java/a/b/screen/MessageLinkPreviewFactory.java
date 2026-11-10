@@ -8,6 +8,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import a.b.api.ApiClient;
+import a.b.model.Message;
+import a.b.util.TimeUtils;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -18,25 +23,25 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import a.b.api.ApiClient;
-import a.b.model.Message;
-import a.b.util.TimeUtils;
 
 /** Renders compact previews for Discord message links found in message text. */
 final class MessageLinkPreviewFactory {
-    private static final Pattern MESSAGE_LINK = Pattern.compile(
-        "https?://(?:(?:www|ptb|canary)\\.)?discord(?:app)?\\.com/channels/(@me|\\d+)/(\\d+)/(\\d+)",
-        Pattern.CASE_INSENSITIVE);
+    private static final Pattern MESSAGE_LINK =
+            Pattern.compile(
+                    "https?://(?:(?:www|ptb|canary)\\.)?discord(?:app)?\\.com/channels/(@me|\\d+)/(\\d+)/(\\d+)",
+                    Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEWS = 3;
     private static final int MAX_CACHE = 100;
     private static final int ACCENT = 0xFF5865F2;
 
     private final MessageAdapter adapter;
-    private final Map<String, Message> cache = new LinkedHashMap<String, Message>(16, 0.75f, true) {
-        @Override protected boolean removeEldestEntry(Map.Entry<String, Message> eldest) {
-            return size() > MAX_CACHE;
-        }
-    };
+    private final Map<String, Message> cache =
+            new LinkedHashMap<String, Message>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Message> eldest) {
+                    return size() > MAX_CACHE;
+                }
+            };
     private final Set<String> loading = new HashSet<>();
     private final Map<String, Long> retryAfter = new HashMap<>();
     private final Map<String, Integer> failures = new HashMap<>();
@@ -46,7 +51,8 @@ final class MessageLinkPreviewFactory {
     }
 
     List<View> build(Message msg, ViewGroup parent) {
-        if (adapter.activity == null || msg == null || msg.content == null) return Collections.emptyList();
+        if (adapter.activity == null || msg == null || msg.content == null)
+            return Collections.emptyList();
         List<View> views = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         Matcher matcher = MESSAGE_LINK.matcher(msg.content);
@@ -57,7 +63,8 @@ final class MessageLinkPreviewFactory {
             if (!seen.add(key)) continue;
 
             Message linked = cache.get(key);
-            if (linked == null && channelId.equals(adapter.channelId)) linked = findLoaded(messageId);
+            if (linked == null && channelId.equals(adapter.channelId))
+                linked = findLoaded(messageId);
             if (linked == null) linked = findCached(channelId, messageId);
             if (linked != null) {
                 cache.put(key, linked);
@@ -114,29 +121,40 @@ final class MessageLinkPreviewFactory {
         }
         loading.add(key);
         final ApiClient api = adapter.activity.apiClient;
-        api.fetchMessage(channelId, messageId, new ApiClient.Callback<Message>() {
-            @Override public void onSuccess(Message result) {
-                if (result != null) loaded(channelId, messageId, key, result);
-                else loadAround(api, channelId, messageId, key);
-            }
+        api.fetchMessage(
+                channelId,
+                messageId,
+                new ApiClient.Callback<Message>() {
+                    @Override
+                    public void onSuccess(Message result) {
+                        if (result != null) loaded(channelId, messageId, key, result);
+                        else loadAround(api, channelId, messageId, key);
+                    }
 
-            @Override public void onError(String message) {
-                loadAround(api, channelId, messageId, key);
-            }
-        });
+                    @Override
+                    public void onError(String message) {
+                        loadAround(api, channelId, messageId, key);
+                    }
+                });
     }
 
-    private void loadAround(ApiClient api, final String channelId, final String messageId, final String key) {
-        api.fetchMessageAround(channelId, messageId, new ApiClient.Callback<Message>() {
-            @Override public void onSuccess(Message result) {
-                if (result != null) loaded(channelId, messageId, key, result);
-                else failed(channelId, messageId, key);
-            }
+    private void loadAround(
+            ApiClient api, final String channelId, final String messageId, final String key) {
+        api.fetchMessageAround(
+                channelId,
+                messageId,
+                new ApiClient.Callback<Message>() {
+                    @Override
+                    public void onSuccess(Message result) {
+                        if (result != null) loaded(channelId, messageId, key, result);
+                        else failed(channelId, messageId, key);
+                    }
 
-            @Override public void onError(String message) {
-                failed(channelId, messageId, key);
-            }
-        });
+                    @Override
+                    public void onError(String message) {
+                        failed(channelId, messageId, key);
+                    }
+                });
     }
 
     private void loaded(String channelId, String messageId, String key, Message result) {
@@ -165,21 +183,23 @@ final class MessageLinkPreviewFactory {
     }
 
     private void refreshOwners(final String channelId, final String messageId) {
-        adapter.ui.post(() -> {
-            for (int i = 0; i < adapter.displayList.size(); i++) {
-                Message m = adapter.displayList.get(i);
-                if (m != null && references(m.content, channelId, messageId)) {
-                    adapter.notifyItemChanged(i);
-                }
-            }
-        });
+        adapter.ui.post(
+                () -> {
+                    for (int i = 0; i < adapter.displayList.size(); i++) {
+                        Message m = adapter.displayList.get(i);
+                        if (m != null && references(m.content, channelId, messageId)) {
+                            adapter.notifyItemChanged(i);
+                        }
+                    }
+                });
     }
 
     private static boolean references(String content, String channelId, String messageId) {
         if (content == null) return false;
         Matcher matcher = MESSAGE_LINK.matcher(content);
         while (matcher.find()) {
-            if (channelId.equals(matcher.group(2)) && messageId.equals(matcher.group(3))) return true;
+            if (channelId.equals(matcher.group(2)) && messageId.equals(matcher.group(3)))
+                return true;
         }
         return false;
     }
@@ -192,7 +212,9 @@ final class MessageLinkPreviewFactory {
 
         View bar = new View(adapter.activity);
         bar.setBackgroundColor(ACCENT);
-        wrapper.addView(bar, new LinearLayout.LayoutParams(adapter.dp(4), ViewGroup.LayoutParams.MATCH_PARENT));
+        wrapper.addView(
+                bar,
+                new LinearLayout.LayoutParams(adapter.dp(4), ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout card = new LinearLayout(adapter.activity);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -202,7 +224,8 @@ final class MessageLinkPreviewFactory {
         bg.setCornerRadius(adapter.dp(4));
         card.setBackground(bg);
         card.setClipToOutline(true);
-        wrapper.addView(card, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        wrapper.addView(
+                card, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         LinearLayout header = new LinearLayout(adapter.activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -215,7 +238,8 @@ final class MessageLinkPreviewFactory {
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine();
         name.setEllipsize(TextUtils.TruncateAt.END);
-        header.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        header.addView(
+                name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView time = new TextView(adapter.activity);
         time.setText(TimeUtils.messageTime(linked.timestamp));
@@ -273,11 +297,12 @@ final class MessageLinkPreviewFactory {
         text.setTextColor(MessageAdapter.MUTED);
         text.setTextSize(12);
         text.setPadding(adapter.dp(12), adapter.dp(4), 0, adapter.dp(4));
-        text.setOnClickListener(v -> {
-            retryAfter.remove(key);
-            failures.remove(key);
-            refreshOwners(channelId, messageId);
-        });
+        text.setOnClickListener(
+                v -> {
+                    retryAfter.remove(key);
+                    failures.remove(key);
+                    refreshOwners(channelId, messageId);
+                });
         return text;
     }
 }

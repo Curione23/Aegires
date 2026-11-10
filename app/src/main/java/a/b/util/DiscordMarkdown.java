@@ -8,17 +8,18 @@ import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.TextPaint;
+import android.text.style.BackgroundColorSpan;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.LeadingMarginSpan;
 import android.text.style.LineBackgroundSpan;
-import android.text.style.BackgroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.text.style.UnderlineSpan;
 import android.view.View;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,13 +35,18 @@ public final class DiscordMarkdown {
     private static final Pattern LANG = Pattern.compile("^[A-Za-z0-9_+\\-.#]+\\n");
     private static final Pattern HEADING = Pattern.compile("(#{1,3}) +(\\S.*)");
     private static final Pattern LIST_ITEM = Pattern.compile("( *)([-*]|\\d{1,9}\\.) +(\\S.*)");
-    private static final Pattern AUTO_LINK = Pattern.compile("<(https?://[^\\s>]+)>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUTO_LINK =
+            Pattern.compile("<(https?://[^\\s>]+)>", Pattern.CASE_INSENSITIVE);
     private static final Pattern URL_START = Pattern.compile("https?://", Pattern.CASE_INSENSITIVE);
-    private static final Pattern TOKEN = Pattern.compile("<(?:@!?\\d+|@&\\d+|#\\d+|a?:\\w+:\\d+|t:-?\\d+(?::[tTdDfFR])?|/[\\w-]+(?: [\\w-]+){0,2}:\\d+|id:[\\w-]+)>");
+    private static final Pattern TOKEN =
+            Pattern.compile(
+                    "<(?:@!?\\d+|@&\\d+|#\\d+|a?:\\w+:\\d+|t:-?\\d+(?::[tTdDfFR])?|/[\\w-]+(?: [\\w-]+){0,2}:\\d+|id:[\\w-]+)>");
 
     private static final int FLAGS = Spannable.SPAN_EXCLUSIVE_EXCLUSIVE;
 
-    private interface SpanMaker { Object make(); }
+    private interface SpanMaker {
+        Object make();
+    }
 
     private DiscordMarkdown() {}
 
@@ -61,7 +67,10 @@ public final class DiscordMarkdown {
             boolean lineStart = i == 0 || s.charAt(i - 1) == '\n';
             if (lineStart) {
                 int next = block(out, s, i, allowQuote);
-                if (next >= 0) { i = next; continue; }
+                if (next >= 0) {
+                    i = next;
+                    continue;
+                }
             }
             int end = paragraphEnd(s, i, allowQuote);
             int next = inline(out, s, i, end, true, false);
@@ -174,14 +183,17 @@ public final class DiscordMarkdown {
         return pos;
     }
 
-    private static boolean isWord(char c) { return Character.isLetterOrDigit(c) || c == '_'; }
+    private static boolean isWord(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
 
     private static boolean isEscapable(char c) {
         boolean alnum = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
         return !alnum && !Character.isWhitespace(c);
     }
 
-    private static int inline(SpannableStringBuilder out, String s, int from, int to, boolean top, boolean inLink) {
+    private static int inline(
+            SpannableStringBuilder out, String s, int from, int to, boolean top, boolean inLink) {
         int limit = top ? s.length() : to;
         int i = from;
         while (i < to) {
@@ -204,12 +216,24 @@ public final class DiscordMarkdown {
                         r = j;
                     }
                     break;
-                case '*': r = star(out, s, i, to, inLink); break;
-                case '_': r = underscore(out, s, i, to, inLink); break;
-                case '~': r = pair(out, s, i, to, "~~", inLink, StrikethroughSpan::new); break;
-                case '|': r = pair(out, s, i, to, "||", inLink, SpoilerSpan::new); break;
-                case '[': r = maskedLink(out, s, i, to, inLink); break;
-                case '<': r = angle(out, s, i, to); break;
+                case '*':
+                    r = star(out, s, i, to, inLink);
+                    break;
+                case '_':
+                    r = underscore(out, s, i, to, inLink);
+                    break;
+                case '~':
+                    r = pair(out, s, i, to, "~~", inLink, StrikethroughSpan::new);
+                    break;
+                case '|':
+                    r = pair(out, s, i, to, "||", inLink, SpoilerSpan::new);
+                    break;
+                case '[':
+                    r = maskedLink(out, s, i, to, inLink);
+                    break;
+                case '<':
+                    r = angle(out, s, i, to);
+                    break;
                 case 'h':
                 case 'H':
                     if (!inLink && (i == 0 || !isWord(s.charAt(i - 1)))) r = bareUrl(out, s, i, to);
@@ -226,16 +250,28 @@ public final class DiscordMarkdown {
         return i;
     }
 
-    private static int delim(SpannableStringBuilder out, String s, int contentFrom, int contentTo,
-                             int endIdx, boolean inLink, SpanMaker maker) {
+    private static int delim(
+            SpannableStringBuilder out,
+            String s,
+            int contentFrom,
+            int contentTo,
+            int endIdx,
+            boolean inLink,
+            SpanMaker maker) {
         int st = out.length();
         inline(out, s, contentFrom, contentTo, false, inLink);
         if (out.length() > st) out.setSpan(maker.make(), st, out.length(), FLAGS);
         return endIdx;
     }
 
-    private static int pair(SpannableStringBuilder out, String s, int i, int to, String d,
-                            boolean inLink, SpanMaker maker) {
+    private static int pair(
+            SpannableStringBuilder out,
+            String s,
+            int i,
+            int to,
+            String d,
+            boolean inLink,
+            SpanMaker maker) {
         if (!s.startsWith(d, i) || i + 2 >= to) return -1;
         int close = findClose(s, i + 2, to, d, false);
         if (close < 0) return -1;
@@ -245,29 +281,55 @@ public final class DiscordMarkdown {
     private static int star(SpannableStringBuilder out, String s, int i, int to, boolean inLink) {
         if (s.startsWith("**", i) && i + 2 < to) {
             int close = findClose(s, i + 2, to, "**", true);
-            if (close >= 0) return delim(out, s, i + 2, close, close + 2, inLink, () -> new StyleSpan(Typeface.BOLD));
+            if (close >= 0)
+                return delim(
+                        out,
+                        s,
+                        i + 2,
+                        close,
+                        close + 2,
+                        inLink,
+                        () -> new StyleSpan(Typeface.BOLD));
         }
         if (i + 1 < to) {
             char nx = s.charAt(i + 1);
             if (!Character.isWhitespace(nx) && nx != '*') {
                 int close = findStarEmClose(s, i + 1, to);
-                if (close >= 0) return delim(out, s, i + 1, close, close + 1, inLink, () -> new StyleSpan(Typeface.ITALIC));
+                if (close >= 0)
+                    return delim(
+                            out,
+                            s,
+                            i + 1,
+                            close,
+                            close + 1,
+                            inLink,
+                            () -> new StyleSpan(Typeface.ITALIC));
             }
         }
         return -1;
     }
 
-    private static int underscore(SpannableStringBuilder out, String s, int i, int to, boolean inLink) {
+    private static int underscore(
+            SpannableStringBuilder out, String s, int i, int to, boolean inLink) {
         if (s.startsWith("__", i) && i + 2 < to) {
             int close = findClose(s, i + 2, to, "__", true);
-            if (close >= 0) return delim(out, s, i + 2, close, close + 2, inLink, UnderlineSpan::new);
+            if (close >= 0)
+                return delim(out, s, i + 2, close, close + 2, inLink, UnderlineSpan::new);
         }
         if (i > 0 && isWord(s.charAt(i - 1))) return -1;
         if (i + 1 < to) {
             char nx = s.charAt(i + 1);
             if (!Character.isWhitespace(nx) && nx != '_') {
                 int close = findUnderEmClose(s, i + 1, to);
-                if (close >= 0) return delim(out, s, i + 1, close, close + 1, inLink, () -> new StyleSpan(Typeface.ITALIC));
+                if (close >= 0)
+                    return delim(
+                            out,
+                            s,
+                            i + 1,
+                            close,
+                            close + 1,
+                            inLink,
+                            () -> new StyleSpan(Typeface.ITALIC));
             }
         }
         return -1;
@@ -278,10 +340,16 @@ public final class DiscordMarkdown {
         int k = from;
         while (k < to) {
             char ch = s.charAt(k);
-            if (ch == '\\') { k += 2; continue; }
+            if (ch == '\\') {
+                k += 2;
+                continue;
+            }
             if (ch == '`') {
                 int skip = skipCode(s, k, to);
-                if (skip > 0) { k = skip; continue; }
+                if (skip > 0) {
+                    k = skip;
+                    continue;
+                }
             }
             if (k > from && s.startsWith(d, k)) {
                 int after = k + d.length();
@@ -296,13 +364,22 @@ public final class DiscordMarkdown {
         int k = from;
         while (k < to) {
             char ch = s.charAt(k);
-            if (ch == '\\') { k += 2; continue; }
+            if (ch == '\\') {
+                k += 2;
+                continue;
+            }
             if (ch == '`') {
                 int skip = skipCode(s, k, to);
-                if (skip > 0) { k = skip; continue; }
+                if (skip > 0) {
+                    k = skip;
+                    continue;
+                }
             }
             if (ch == '*') {
-                if (k + 1 < to && s.charAt(k + 1) == '*') { k += 2; continue; }
+                if (k + 1 < to && s.charAt(k + 1) == '*') {
+                    k += 2;
+                    continue;
+                }
                 if (k > from && !Character.isWhitespace(s.charAt(k - 1))) return k;
             }
             k++;
@@ -314,13 +391,22 @@ public final class DiscordMarkdown {
         int k = from;
         while (k < to) {
             char ch = s.charAt(k);
-            if (ch == '\\') { k += 2; continue; }
+            if (ch == '\\') {
+                k += 2;
+                continue;
+            }
             if (ch == '`') {
                 int skip = skipCode(s, k, to);
-                if (skip > 0) { k = skip; continue; }
+                if (skip > 0) {
+                    k = skip;
+                    continue;
+                }
             }
             if (ch == '_') {
-                if (k + 1 < to && s.charAt(k + 1) == '_') { k += 2; continue; }
+                if (k + 1 < to && s.charAt(k + 1) == '_') {
+                    k += 2;
+                    continue;
+                }
                 boolean wordAfter = k + 1 < to && isWord(s.charAt(k + 1));
                 if (k > from && !Character.isWhitespace(s.charAt(k - 1)) && !wordAfter) return k;
             }
@@ -360,7 +446,10 @@ public final class DiscordMarkdown {
             if (m == n) {
                 String content = s.substring(i + n, k);
                 if (content.isEmpty()) return -1;
-                if (content.length() > 2 && content.startsWith(" ") && content.endsWith(" ") && !content.trim().isEmpty()) {
+                if (content.length() > 2
+                        && content.startsWith(" ")
+                        && content.endsWith(" ")
+                        && !content.trim().isEmpty()) {
                     content = content.substring(1, content.length() - 1);
                 }
                 int st = out.length();
@@ -403,19 +492,27 @@ public final class DiscordMarkdown {
 
     private static boolean isHttp(String url) {
         String l = url.toLowerCase(java.util.Locale.ROOT);
-        return (l.startsWith("http://") && l.length() > 7) || (l.startsWith("https://") && l.length() > 8);
+        return (l.startsWith("http://") && l.length() > 7)
+                || (l.startsWith("https://") && l.length() > 8);
     }
 
-    private static int maskedLink(SpannableStringBuilder out, String s, int i, int to, boolean inLink) {
+    private static int maskedLink(
+            SpannableStringBuilder out, String s, int i, int to, boolean inLink) {
         if (inLink) return -1;
         int depth = 0, close = -1;
         for (int k = i; k < to; k++) {
             char ch = s.charAt(k);
-            if (ch == '\\') { k++; continue; }
+            if (ch == '\\') {
+                k++;
+                continue;
+            }
             if (ch == '[') depth++;
             else if (ch == ']') {
                 depth--;
-                if (depth == 0) { close = k; break; }
+                if (depth == 0) {
+                    close = k;
+                    break;
+                }
             }
         }
         if (close < 0 || close == i + 1) return -1;
@@ -491,9 +588,18 @@ public final class DiscordMarkdown {
         }
         while (e > minEnd) {
             char last = s.charAt(e - 1);
-            if (".,:;\"'!?".indexOf(last) >= 0) { e--; continue; }
-            if (last == ')' && count(s, i, e, '(') < count(s, i, e, ')')) { e--; continue; }
-            if (last == ']' && count(s, i, e, '[') < count(s, i, e, ']')) { e--; continue; }
+            if (".,:;\"'!?".indexOf(last) >= 0) {
+                e--;
+                continue;
+            }
+            if (last == ')' && count(s, i, e, '(') < count(s, i, e, ')')) {
+                e--;
+                continue;
+            }
+            if (last == ']' && count(s, i, e, '[') < count(s, i, e, ']')) {
+                e--;
+                continue;
+            }
             break;
         }
         if (e <= minEnd) return -1;
@@ -513,11 +619,16 @@ public final class DiscordMarkdown {
     public static final class LinkSpan extends ClickableSpan {
         private final String url;
 
-        LinkSpan(String url) { this.url = url; }
+        LinkSpan(String url) {
+            this.url = url;
+        }
 
-        public String getURL() { return url; }
+        public String getURL() {
+            return url;
+        }
 
-        @Override public void onClick(View v) {
+        @Override
+        public void onClick(View v) {
             LinkDialog.show(v.getContext(), url);
         }
     }
@@ -525,26 +636,53 @@ public final class DiscordMarkdown {
     public static final class SpoilerSpan extends ClickableSpan {
         private boolean revealed;
 
-        @Override public void onClick(View v) {
+        @Override
+        public void onClick(View v) {
             revealed = !revealed;
             v.invalidate();
         }
 
-        @Override public void updateDrawState(TextPaint ds) {
+        @Override
+        public void updateDrawState(TextPaint ds) {
             ds.bgColor = revealed ? SPOILER_SHOWN_BG : SPOILER_HIDDEN;
             ds.setColor(revealed ? CODE_FG : SPOILER_HIDDEN);
         }
     }
 
     private static final class CodeBlockSpan implements LeadingMarginSpan, LineBackgroundSpan {
-        @Override public int getLeadingMargin(boolean first) { return dp(8); }
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return dp(8);
+        }
 
-        @Override public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
-                                                int bottom, CharSequence text, int start, int end,
-                                                boolean first, Layout layout) {}
+        @Override
+        public void drawLeadingMargin(
+                Canvas c,
+                Paint p,
+                int x,
+                int dir,
+                int top,
+                int baseline,
+                int bottom,
+                CharSequence text,
+                int start,
+                int end,
+                boolean first,
+                Layout layout) {}
 
-        @Override public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
-                                             int bottom, CharSequence text, int start, int end, int lnum) {
+        @Override
+        public void drawBackground(
+                Canvas c,
+                Paint p,
+                int left,
+                int right,
+                int top,
+                int baseline,
+                int bottom,
+                CharSequence text,
+                int start,
+                int end,
+                int lnum) {
             int old = p.getColor();
             p.setColor(CODE_BG);
             c.drawRect(left, top, right, bottom, p);
@@ -553,11 +691,25 @@ public final class DiscordMarkdown {
     }
 
     private static final class QuoteBarSpan implements LeadingMarginSpan {
-        @Override public int getLeadingMargin(boolean first) { return dp(4) + dp(10); }
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return dp(4) + dp(10);
+        }
 
-        @Override public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
-                                                int bottom, CharSequence text, int start, int end,
-                                                boolean first, Layout layout) {
+        @Override
+        public void drawLeadingMargin(
+                Canvas c,
+                Paint p,
+                int x,
+                int dir,
+                int top,
+                int baseline,
+                int bottom,
+                CharSequence text,
+                int start,
+                int end,
+                boolean first,
+                Layout layout) {
             int old = p.getColor();
             Paint.Style style = p.getStyle();
             p.setColor(QUOTE_BAR);
@@ -578,11 +730,25 @@ public final class DiscordMarkdown {
             this.margin = dp(16) * (depth + 1) + dp(8);
         }
 
-        @Override public int getLeadingMargin(boolean first) { return margin; }
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return margin;
+        }
 
-        @Override public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
-                                                int bottom, CharSequence text, int start, int end,
-                                                boolean first, Layout layout) {
+        @Override
+        public void drawLeadingMargin(
+                Canvas c,
+                Paint p,
+                int x,
+                int dir,
+                int top,
+                int baseline,
+                int bottom,
+                CharSequence text,
+                int start,
+                int end,
+                boolean first,
+                Layout layout) {
             if (!first) return;
             float w = p.measureText(label);
             float tx = dir > 0 ? x + margin - dp(6) - w : x - margin + dp(6);

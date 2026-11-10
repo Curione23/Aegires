@@ -8,15 +8,17 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
+
 import a.b.MainActivity;
 import a.b.model.DiscordUser;
 import a.b.model.Guild;
 import a.b.util.SimpleMarkdown;
 import a.b.util.Ui;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 /** "Member since" block and the About Me card. */
 final class ProfileDetailsView {
@@ -39,8 +41,13 @@ final class ProfileDetailsView {
         aboutCard.setVisibility(View.GONE);
     }
 
-    View getDetailsView() { return detailsSection; }
-    View getAboutCard() { return aboutCard; }
+    View getDetailsView() {
+        return detailsSection;
+    }
+
+    View getAboutCard() {
+        return aboutCard;
+    }
 
     void renderDetails(DiscordUser user, String guildId, long joinedMs) {
         if (user == null || activity == null) return;
@@ -48,21 +55,33 @@ final class ProfileDetailsView {
 
         detailsSection.addView(Ui.sectionLabel(activity, "Member since"));
         if (user.createdAtMs > 0) {
-            detailsSection.addView(sinceRow(Ui.BLURPLE, "D", formatDate(user.createdAtMs), "Discord"));
+            detailsSection.addView(
+                    sinceRow(Ui.BLURPLE, "D", formatDate(user.createdAtMs), "Discord"));
         }
         if (guildId != null && joinedMs > 0) {
             String name = guildName(guildId);
             String trimmed = name.trim();
-            detailsSection.addView(sinceRow(Ui.avatarColor(guildId),
-                trimmed.isEmpty() ? "?" : trimmed.substring(0, trimmed.offsetByCodePoints(0, 1)).toUpperCase(Locale.US),
-                formatDate(joinedMs), name));
+            detailsSection.addView(
+                    sinceRow(
+                            Ui.avatarColor(guildId),
+                            trimmed.isEmpty()
+                                    ? "?"
+                                    : trimmed.substring(0, trimmed.offsetByCodePoints(0, 1))
+                                            .toUpperCase(Locale.US),
+                            formatDate(joinedMs),
+                            name));
         }
         if (user.mutualGuildsCount > 0) {
-            detailsSection.addView(infoRow("Mutual servers", String.valueOf(user.mutualGuildsCount), dp(14)));
+            detailsSection.addView(
+                    infoRow("Mutual servers", String.valueOf(user.mutualGuildsCount), dp(14)));
         }
         if (user.premiumType > 0) {
-            String tier = user.premiumType == 2 ? "Nitro" : user.premiumType == 3 ? "Nitro Basic" : "Nitro Classic";
-            detailsSection.addView(infoRow("Subscription", tier, user.mutualGuildsCount > 0 ? 0 : dp(14)));
+            String tier =
+                    user.premiumType == 2
+                            ? "Nitro"
+                            : user.premiumType == 3 ? "Nitro Basic" : "Nitro Classic";
+            detailsSection.addView(
+                    infoRow("Subscription", tier, user.mutualGuildsCount > 0 ? 0 : dp(14)));
         }
         detailsSection.setVisibility(View.VISIBLE);
     }
@@ -130,8 +149,7 @@ final class ProfileDetailsView {
         lp.topMargin = topMargin == 0 ? dp(6) : topMargin;
         row.setLayoutParams(lp);
 
-        row.addView(Ui.text(activity, label, Ui.MUTED, 14),
-            new LinearLayout.LayoutParams(-2, -2));
+        row.addView(Ui.text(activity, label, Ui.MUTED, 14), new LinearLayout.LayoutParams(-2, -2));
 
         TextView v = Ui.text(activity, value, Ui.TEXT, 14);
         LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(-2, -2);
@@ -144,5 +162,7 @@ final class ProfileDetailsView {
         return new SimpleDateFormat("MMM d, yyyy", Locale.US).format(new Date(ms));
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }

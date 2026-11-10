@@ -10,9 +10,10 @@ import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import java.util.concurrent.ConcurrentHashMap;
+
 import a.b.model.Message;
-import a.b.util.MediaCache;
+
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Media thumbnails, sizing, and full-screen WebView. */
 final class MessageMediaViewFactory {
@@ -28,10 +29,14 @@ final class MessageMediaViewFactory {
     int[] size(ViewGroup parent, Message msg, int w, int h, boolean fill) {
         if (msg != null && msg.id != null && (w <= 0 || h <= 0)) {
             int[] dim = messageDimensionCache.get(msg.id);
-            if (dim != null) { w = dim[0]; h = dim[1]; }
+            if (dim != null) {
+                w = dim[0];
+                h = dim[1];
+            }
         }
         int pw = parent != null ? parent.getWidth() : 0;
-        if (pw <= 0 && adapter.activity != null) pw = adapter.activity.getResources().getDisplayMetrics().widthPixels;
+        if (pw <= 0 && adapter.activity != null)
+            pw = adapter.activity.getResources().getDisplayMetrics().widthPixels;
 
         int avail = Math.max(pw > 0 ? pw - adapter.dp(112) : adapter.dp(248), adapter.dp(120));
         int maxH = adapter.dp(400);
@@ -42,14 +47,24 @@ final class MessageMediaViewFactory {
 
         int[] result;
         if (fill) {
-            if (!known) { w = 16; h = 9; }
-            result = new int[]{avail, Math.max(adapter.dp(80), Math.min(maxH, (int) ((long) avail * h / w)))};
+            if (!known) {
+                w = 16;
+                h = 9;
+            }
+            result =
+                    new int[] {
+                        avail,
+                        Math.max(adapter.dp(80), Math.min(maxH, (int) ((long) avail * h / w)))
+                    };
         } else if (!known) {
-            result = new int[]{avail, Math.min(avail * 9 / 16, maxH)};
+            result = new int[] {avail, Math.min(avail * 9 / 16, maxH)};
         } else {
             float scale = Math.min((float) avail / w, (float) maxH / h);
             if (scale > 2f) scale = 2f;
-            result = new int[]{Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))};
+            result =
+                    new int[] {
+                        Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))
+                    };
         }
         mediaSizeCache.put(cacheKey, result);
         return result;
@@ -63,16 +78,22 @@ final class MessageMediaViewFactory {
         frame.setBackgroundColor(show ? Color.BLACK : MessageAdapter.EMBED_BG);
         if (show) {
             ImageView iv = new ImageView(adapter.activity);
-            iv.setScaleType(crop ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
+            iv.setScaleType(
+                    crop ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_CENTER);
             adapter.imageLoader.load(preview, video ? null : openUrl, iv);
-            frame.addView(iv, new FrameLayout.LayoutParams(MessageAdapter.MATCH, MessageAdapter.MATCH));
+            frame.addView(
+                    iv, new FrameLayout.LayoutParams(MessageAdapter.MATCH, MessageAdapter.MATCH));
         } else if (preview != null) {
-            frame.addView(overlay("\uD83D\uDDBC", 0xAAFFFFFF, 14),
-                new FrameLayout.LayoutParams(MessageAdapter.WRAP, MessageAdapter.WRAP, Gravity.CENTER));
+            frame.addView(
+                    overlay("\uD83D\uDDBC", 0xAAFFFFFF, 14),
+                    new FrameLayout.LayoutParams(
+                            MessageAdapter.WRAP, MessageAdapter.WRAP, Gravity.CENTER));
         }
         if (video) {
-            frame.addView(overlay("\u25B6", Color.WHITE, 30),
-                new FrameLayout.LayoutParams(MessageAdapter.WRAP, MessageAdapter.WRAP, Gravity.CENTER));
+            frame.addView(
+                    overlay("\u25B6", Color.WHITE, 30),
+                    new FrameLayout.LayoutParams(
+                            MessageAdapter.WRAP, MessageAdapter.WRAP, Gravity.CENTER));
         }
         frame.setOnClickListener(v -> showFullscreen(openUrl, video));
         return frame;
@@ -88,11 +109,21 @@ final class MessageMediaViewFactory {
         settings.setAllowContentAccess(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         String src = escapeHtmlAttribute(url);
-        String media = video
-            ? "<video controls autoplay playsinline style='width:100%'><source src=\"" + src + "\" type=\"video/mp4\"></video>"
-            : "<img src=\"" + src + "\" style='max-width:100%'>";
-        web.loadDataWithBaseURL(null, "<html><body style='margin:0;height:100vh;background:#000;display:flex;" +
-            "justify-content:center;align-items:center'>" + media + "</body></html>", "text/html", "UTF-8", null);
+        String media =
+                video
+                        ? "<video controls autoplay playsinline style='width:100%'><source src=\""
+                                + src
+                                + "\" type=\"video/mp4\"></video>"
+                        : "<img src=\"" + src + "\" style='max-width:100%'>";
+        web.loadDataWithBaseURL(
+                null,
+                "<html><body style='margin:0;height:100vh;background:#000;display:flex;"
+                        + "justify-content:center;align-items:center'>"
+                        + media
+                        + "</body></html>",
+                "text/html",
+                "UTF-8",
+                null);
         adapter.showFullscreen(web);
     }
 
@@ -100,14 +131,20 @@ final class MessageMediaViewFactory {
         if (!isReal(value)) return false;
         try {
             java.net.URL url = new java.net.URL(value);
-            return "https".equalsIgnoreCase(url.getProtocol()) && url.getHost() != null && !url.getHost().isEmpty();
+            return "https".equalsIgnoreCase(url.getProtocol())
+                    && url.getHost() != null
+                    && !url.getHost().isEmpty();
         } catch (Exception ignored) {
             return false;
         }
     }
 
     static String escapeHtmlAttribute(String value) {
-        return value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;");
+        return value.replace("&", "&amp;")
+                .replace("\"", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("'", "&#39;");
     }
 
     private android.widget.TextView overlay(CharSequence text, int color, float sp) {
@@ -124,5 +161,7 @@ final class MessageMediaViewFactory {
         return p;
     }
 
-    private static boolean isReal(String s) { return s != null && !s.isEmpty() && !"null".equals(s); }
+    private static boolean isReal(String s) {
+        return s != null && !s.isEmpty() && !"null".equals(s);
+    }
 }

@@ -9,6 +9,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import a.b.MainActivity;
 import a.b.model.DmChannel;
 import a.b.util.Ui;
@@ -68,9 +69,10 @@ final class DmRowView {
         }
 
         if (dm.id != null) {
-            row.setOnClickListener(v -> {
-                if (activity != null) activity.navigate(new MessageListScreen(null, dm.id));
-            });
+            row.setOnClickListener(
+                    v -> {
+                        if (activity != null) activity.navigate(new MessageListScreen(null, dm.id));
+                    });
         }
         return row;
     }
@@ -87,11 +89,15 @@ final class DmRowView {
 
         ImageView icon = Ui.iconView(activity, Ui.I_USER, Color.WHITE, 24);
         icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        
+
         boolean hasAvatar = r != null && r.hasAvatar() && r.id != null;
-        
-        wrap.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : (r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0])));
-        
+
+        wrap.setBackground(
+                Ui.oval(
+                        hasAvatar
+                                ? Ui.BG_SECONDARY
+                                : (r != null ? Ui.avatarColor(r.id) : Ui.AVATAR_COLORS[0])));
+
         icon.setVisibility(hasAvatar ? View.GONE : View.VISIBLE);
         wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
 
@@ -104,5 +110,7 @@ final class DmRowView {
         return wrap;
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }

@@ -1,8 +1,10 @@
 package a.b.util;
 
 import android.util.Base64;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
+
 import java.util.List;
 import java.util.Map;
 
@@ -33,16 +35,39 @@ public final class PermissionUtil {
         }
     }
 
-    public static boolean canViewChannel(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
-        return (computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner) & VIEW_CHANNEL) != 0;
+    public static boolean canViewChannel(
+            JSONObject channelJson,
+            String guildId,
+            String userId,
+            List<String> memberRoleIds,
+            Map<String, Long> rolePerms,
+            boolean isOwner) {
+        return (computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner)
+                        & VIEW_CHANNEL)
+                != 0;
     }
 
-    public static boolean canManageMessages(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
-        return (computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner) & MANAGE_MESSAGES) != 0;
+    public static boolean canManageMessages(
+            JSONObject channelJson,
+            String guildId,
+            String userId,
+            List<String> memberRoleIds,
+            Map<String, Long> rolePerms,
+            boolean isOwner) {
+        return (computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner)
+                        & MANAGE_MESSAGES)
+                != 0;
     }
 
-    public static boolean canCreateThreads(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
-        long permissions = computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner);
+    public static boolean canCreateThreads(
+            JSONObject channelJson,
+            String guildId,
+            String userId,
+            List<String> memberRoleIds,
+            Map<String, Long> rolePerms,
+            boolean isOwner) {
+        long permissions =
+                computePermissions(channelJson, guildId, userId, memberRoleIds, rolePerms, isOwner);
         int type = channelJson.optInt("type", 0);
         if (type == GUILD_FORUM || type == GUILD_MEDIA) {
             // Forum/media thread creation is gated by SEND_MESSAGES;
@@ -52,7 +77,13 @@ public final class PermissionUtil {
         return (permissions & CREATE_PUBLIC_THREADS) != 0;
     }
 
-    private static long computePermissions(JSONObject channelJson, String guildId, String userId, List<String> memberRoleIds, Map<String, Long> rolePerms, boolean isOwner) {
+    private static long computePermissions(
+            JSONObject channelJson,
+            String guildId,
+            String userId,
+            List<String> memberRoleIds,
+            Map<String, Long> rolePerms,
+            boolean isOwner) {
         if (channelJson == null) return 0;
         if (isOwner) return ~0L;
         long permissions = basePermissions(guildId, memberRoleIds, rolePerms);
@@ -64,7 +95,8 @@ public final class PermissionUtil {
         return permissions;
     }
 
-    private static long basePermissions(String guildId, List<String> memberRoleIds, Map<String, Long> rolePerms) {
+    private static long basePermissions(
+            String guildId, List<String> memberRoleIds, Map<String, Long> rolePerms) {
         if (rolePerms == null) return 0;
         long out = 0;
         if (guildId != null) {
@@ -82,21 +114,33 @@ public final class PermissionUtil {
         return out;
     }
 
-    private static long applyOverwrites(long permissions, JSONArray overwrites, String guildId, String userId, List<String> memberRoleIds) {
-        permissions = applyRoleOverwrite(permissions, findOverwrite(overwrites, guildId, OVERWRITE_ROLE));
+    private static long applyOverwrites(
+            long permissions,
+            JSONArray overwrites,
+            String guildId,
+            String userId,
+            List<String> memberRoleIds) {
+        permissions =
+                applyRoleOverwrite(permissions, findOverwrite(overwrites, guildId, OVERWRITE_ROLE));
         long roleAllow = 0, roleDeny = 0;
         boolean anyMatch = false;
         for (int i = 0; i < overwrites.length(); i++) {
             JSONObject ow = overwrites.optJSONObject(i);
             if (ow == null || ow.optInt("type", -1) != OVERWRITE_ROLE) continue;
             String targetId = ow.optString("id", null);
-            if (targetId == null || targetId.equals(guildId) || memberRoleIds == null || !memberRoleIds.contains(targetId)) continue;
+            if (targetId == null
+                    || targetId.equals(guildId)
+                    || memberRoleIds == null
+                    || !memberRoleIds.contains(targetId)) continue;
             roleAllow |= parseBits(ow.optString("allow", "0"));
             roleDeny |= parseBits(ow.optString("deny", "0"));
             anyMatch = true;
         }
         if (anyMatch) permissions = (permissions & ~roleDeny) | roleAllow;
-        if (userId != null) permissions = applyRoleOverwrite(permissions, findOverwrite(overwrites, userId, OVERWRITE_MEMBER));
+        if (userId != null)
+            permissions =
+                    applyRoleOverwrite(
+                            permissions, findOverwrite(overwrites, userId, OVERWRITE_MEMBER));
         return permissions;
     }
 
@@ -104,7 +148,8 @@ public final class PermissionUtil {
         if (id == null) return null;
         for (int i = 0; i < overwrites.length(); i++) {
             JSONObject ow = overwrites.optJSONObject(i);
-            if (ow != null && ow.optInt("type", -1) == type && id.equals(ow.optString("id", null))) return ow;
+            if (ow != null && ow.optInt("type", -1) == type && id.equals(ow.optString("id", null)))
+                return ow;
         }
         return null;
     }
@@ -121,7 +166,11 @@ public final class PermissionUtil {
         for (int i = 0; i < s.length(); i++) {
             if (s.charAt(i) < '0' || s.charAt(i) > '9') return 0;
         }
-        try { return Long.parseLong(s); } catch (NumberFormatException e) { return 0; }
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static boolean isNumeric(String s) {

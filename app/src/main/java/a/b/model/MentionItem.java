@@ -36,8 +36,11 @@ public class MentionItem {
         if ((m.content == null || m.content.isEmpty()) && atts != null && atts.length() > 0) {
             m.content = "[attachment]";
         }
-        try { m.timestamp = (Long.parseLong(m.id) >> 22) + 1420070400000L; }
-        catch (Exception e) { m.timestamp = System.currentTimeMillis(); }
+        try {
+            m.timestamp = (Long.parseLong(m.id) >> 22) + 1420070400000L;
+        } catch (Exception e) {
+            m.timestamp = System.currentTimeMillis();
+        }
         return m;
     }
 }

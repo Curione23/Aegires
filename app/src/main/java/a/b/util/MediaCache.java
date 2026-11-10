@@ -1,6 +1,7 @@
 package a.b.util;
 
 import android.graphics.Bitmap;
+
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import javax.crypto.SecretKey;
 
 /* One cache for every picture and video the app shows. */
@@ -44,25 +46,39 @@ public final class MediaCache {
 
         interface Connection {
             int code();
+
             long contentLength();
+
             String header(String name);
+
             InputStream body() throws IOException;
+
             void cancel();
+
             void close();
         }
     }
 
     public interface Decoder {
         Bitmap decode(File file, int targetW, int targetH, int[] outDims);
+
         Bitmap videoFrame(File file, int targetW, int[] outDims);
     }
 
-    public interface Handle { void cancel(); }
+    public interface Handle {
+        void cancel();
+    }
 
     public static final Handle NOOP = () -> {};
 
     public static final class Failure {
-        public enum Kind { NETWORK, HTTP, TOO_LARGE, DECRYPT, DECODE }
+        public enum Kind {
+            NETWORK,
+            HTTP,
+            TOO_LARGE,
+            DECRYPT,
+            DECODE
+        }
 
         public final Kind kind;
         public final int httpCode;
@@ -77,15 +93,22 @@ public final class MediaCache {
         }
 
         public boolean retryable() {
-            return kind == Kind.NETWORK || (kind == Kind.HTTP && (httpCode == 408 || httpCode == 429 || httpCode >= 500));
+            return kind == Kind.NETWORK
+                    || (kind == Kind.HTTP
+                            && (httpCode == 408 || httpCode == 429 || httpCode >= 500));
         }
 
-        @Override public String toString() { return kind + (httpCode != 0 ? " " + httpCode : "") + ": " + message; }
+        @Override
+        public String toString() {
+            return kind + (httpCode != 0 ? " " + httpCode : "") + ": " + message;
+        }
     }
 
     public interface BaseCallback {
         void onProgress(long done, long total);
+
         void onNeedsConfirm(long totalBytes);
+
         void onFailure(Failure failure);
     }
 
@@ -98,9 +121,14 @@ public final class MediaCache {
     }
 
     public abstract static class SimpleCallback implements Callback {
-        @Override public void onProgress(long done, long total) {}
-        @Override public void onNeedsConfirm(long totalBytes) {}
-        @Override public void onFailure(Failure failure) {}
+        @Override
+        public void onProgress(long done, long total) {}
+
+        @Override
+        public void onNeedsConfirm(long totalBytes) {}
+
+        @Override
+        public void onFailure(Failure failure) {}
     }
 
     public static final class Spec {
@@ -116,7 +144,9 @@ public final class MediaCache {
         public String channelId, senderId;
         private String diskKey;
 
-        public Spec(String url) { this.url = url; }
+        public Spec(String url) {
+            this.url = url;
+        }
 
         public static Spec plain(String url, int w, int h) {
             Spec s = new Spec(url);
@@ -125,7 +155,14 @@ public final class MediaCache {
             return s;
         }
 
-        public static Spec encryptedImage(String url, SecretKey key, String channelId, String senderId, long size, int w, int h) {
+        public static Spec encryptedImage(
+                String url,
+                SecretKey key,
+                String channelId,
+                String senderId,
+                long size,
+                int w,
+                int h) {
             Spec s = new Spec(url);
             s.encrypted = true;
             s.key = key;
@@ -139,7 +176,8 @@ public final class MediaCache {
             return s;
         }
 
-        public static Spec encryptedVideo(String url, SecretKey key, String channelId, String senderId, long size, int w) {
+        public static Spec encryptedVideo(
+                String url, SecretKey key, String channelId, String senderId, long size, int w) {
             Spec s = encryptedImage(url, key, channelId, senderId, size, w, 0);
             s.autoBytes = ENC_VIDEO_AUTO;
             s.maxBytes = ENC_VIDEO_MAX;
@@ -152,19 +190,26 @@ public final class MediaCache {
         }
 
         String cryptoFailKey() {
-            return diskKey() + "|c|" + (key == null ? 0 : key.hashCode()) + "|" + channelId + "|" + senderId;
+            return diskKey()
+                    + "|c|"
+                    + (key == null ? 0 : key.hashCode())
+                    + "|"
+                    + channelId
+                    + "|"
+                    + senderId;
         }
     }
 
     private static final int BITMAP = 0, THUMB = 1, TEMP = 2;
-
     private final File rawDir, partDir, plainDir;
     private final Transport transport;
     private final Decoder decoder;
     private final Executor main;
     private final ByteLru<Entry> plainMem, secureMem;
-    private final ExecutorService smallNet = pool(4, "media-net"), bigNet = pool(2, "media-big"),
-        decodePool = pool(2, "media-decode"), ioPool = pool(1, "media-io");
+    private final ExecutorService smallNet = pool(4, "media-net"),
+            bigNet = pool(2, "media-big"),
+            decodePool = pool(2, "media-decode"),
+            ioPool = pool(1, "media-io");
     private final Object lock = new Object();
     private final Map<String, Task> tasks = new LinkedHashMap<>();
     private final ConcurrentHashMap<String, FailEntry> failures = new ConcurrentHashMap<>();
@@ -175,16 +220,31 @@ public final class MediaCache {
     private static final class Entry {
         final Bitmap bitmap;
         final int srcW, srcH;
-        Entry(Bitmap b, int w, int h) { bitmap = b; srcW = w; srcH = h; }
+
+        Entry(Bitmap b, int w, int h) {
+            bitmap = b;
+            srcW = w;
+            srcH = h;
+        }
     }
 
     private static final class FailEntry {
         final Failure failure;
         final long until;
-        FailEntry(Failure f, long until) { failure = f; this.until = until; }
+
+        FailEntry(Failure f, long until) {
+            failure = f;
+            this.until = until;
+        }
     }
 
-    public MediaCache(File root, Transport transport, Decoder decoder, Executor mainExecutor, long memoryBytes, long diskMax) {
+    public MediaCache(
+            File root,
+            Transport transport,
+            Decoder decoder,
+            Executor mainExecutor,
+            long memoryBytes,
+            long diskMax) {
         this.rawDir = new File(root, "raw");
         this.partDir = new File(root, "part");
         this.plainDir = new File(root, "plain");
@@ -200,16 +260,26 @@ public final class MediaCache {
     }
 
     private static ExecutorService pool(int n, final String name) {
-        return Executors.newFixedThreadPool(n, r -> {
-            Thread t = new Thread(r, name);
-            t.setDaemon(true);
-            return t;
-        });
+        return Executors.newFixedThreadPool(
+                n,
+                r -> {
+                    Thread t = new Thread(r, name);
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 
-    public long diskBytes() { return diskBytes.get(); }
-    public long memoryBytes() { return plainMem.size() + secureMem.size(); }
-    public long memoryMax() { return plainMem.max() + secureMem.max(); }
+    public long diskBytes() {
+        return diskBytes.get();
+    }
+
+    public long memoryBytes() {
+        return plainMem.size() + secureMem.size();
+    }
+
+    public long memoryMax() {
+        return plainMem.max() + secureMem.max();
+    }
 
     public Handle loadBitmap(Spec spec, Callback cb) {
         return submit(new Request(BITMAP, spec, cb, null));
@@ -228,7 +298,9 @@ public final class MediaCache {
         return e != null ? e.bitmap : null;
     }
 
-    public void clearFailures() { failures.clear(); }
+    public void clearFailures() {
+        failures.clear();
+    }
 
     public void clearSensitive() {
         secureMem.clear();
@@ -256,9 +328,12 @@ public final class MediaCache {
             this.tcb = tcb;
         }
 
-        BaseCallback base() { return cb != null ? cb : tcb; }
+        BaseCallback base() {
+            return cb != null ? cb : tcb;
+        }
 
-        @Override public void cancel() {
+        @Override
+        public void cancel() {
             cancelled = true;
             Task t;
             synchronized (lock) {
@@ -274,26 +349,39 @@ public final class MediaCache {
         }
 
         void postProgress(final long done, final long total) {
-            main.execute(() -> { if (!cancelled) base().onProgress(done, total); });
+            main.execute(
+                    () -> {
+                        if (!cancelled) base().onProgress(done, total);
+                    });
         }
 
         void postConfirm(final long bytes) {
-            main.execute(() -> { if (!cancelled) base().onNeedsConfirm(bytes); });
+            main.execute(
+                    () -> {
+                        if (!cancelled) base().onNeedsConfirm(bytes);
+                    });
         }
 
         void postFailure(final Failure f) {
-            main.execute(() -> { if (!cancelled) base().onFailure(f); });
+            main.execute(
+                    () -> {
+                        if (!cancelled) base().onFailure(f);
+                    });
         }
 
         void postBitmap(final Bitmap b, final int w, final int h) {
-            main.execute(() -> { if (!cancelled && cb != null) cb.onBitmap(b, w, h); });
+            main.execute(
+                    () -> {
+                        if (!cancelled && cb != null) cb.onBitmap(b, w, h);
+                    });
         }
 
         void postFile(final File f) {
-            main.execute(() -> {
-                if (cancelled || tcb == null) deleteTemp(f);
-                else tcb.onFile(f);
-            });
+            main.execute(
+                    () -> {
+                        if (cancelled || tcb == null) deleteTemp(f);
+                        else tcb.onFile(f);
+                    });
         }
     }
 
@@ -351,7 +439,10 @@ public final class MediaCache {
             return false;
         }
 
-        @Override public void run() { runTask(this); }
+        @Override
+        public void run() {
+            runTask(this);
+        }
     }
 
     private void join(Request r) {
@@ -381,20 +472,31 @@ public final class MediaCache {
         }
     }
 
-    private enum Type { OK, CONFIRM, TOO_LARGE, RETRY, FATAL, CANCELLED }
+    private enum Type {
+        OK,
+        CONFIRM,
+        TOO_LARGE,
+        RETRY,
+        FATAL,
+        CANCELLED
+    }
 
     private static final class Result {
         final Type type;
         final long bytes;
         final int code;
         final long retryAfterMs;
+
         Result(Type type, long bytes, int code, long retryAfterMs) {
             this.type = type;
             this.bytes = bytes;
             this.code = code;
             this.retryAfterMs = retryAfterMs;
         }
-        static Result of(Type t) { return new Result(t, 0, 0, 0); }
+
+        static Result of(Type t) {
+            return new Result(t, 0, 0, 0);
+        }
     }
 
     private void runTask(Task t) {
@@ -412,7 +514,9 @@ public final class MediaCache {
             }
         }
         List<Request> reqs;
-        synchronized (lock) { reqs = new ArrayList<>(t.reqs); }
+        synchronized (lock) {
+            reqs = new ArrayList<>(t.reqs);
+        }
         for (Request r : reqs) r.task = null;
 
         switch (outcome.type) {
@@ -434,10 +538,18 @@ public final class MediaCache {
                 }
                 break;
             case TOO_LARGE:
-                fail(t.dk, reqs, new Failure(Failure.Kind.TOO_LARGE, 0, outcome.bytes, "too large"), 0);
+                fail(
+                        t.dk,
+                        reqs,
+                        new Failure(Failure.Kind.TOO_LARGE, 0, outcome.bytes, "too large"),
+                        0);
                 break;
             case FATAL:
-                fail(t.dk, reqs, new Failure(Failure.Kind.HTTP, outcome.code, 0, "http " + outcome.code), 120_000);
+                fail(
+                        t.dk,
+                        reqs,
+                        new Failure(Failure.Kind.HTTP, outcome.code, 0, "http " + outcome.code),
+                        120_000);
                 break;
             case CANCELLED:
                 break;
@@ -455,7 +567,8 @@ public final class MediaCache {
     }
 
     private void fail(String dk, List<Request> reqs, Failure f, long rememberMs) {
-        if (rememberMs > 0) failures.put(dk, new FailEntry(f, System.currentTimeMillis() + rememberMs));
+        if (rememberMs > 0)
+            failures.put(dk, new FailEntry(f, System.currentTimeMillis() + rememberMs));
         for (Request r : reqs) r.postFailure(f);
     }
 
@@ -487,8 +600,11 @@ public final class MediaCache {
                 default:
             }
             if (attempt + 1 < MAX_ATTEMPTS) {
-                long wait = r.retryAfterMs > 0 ? Math.min(r.retryAfterMs, 10_000)
-                    : (long) (300 * Math.pow(2, attempt)) + (long) (Math.random() * 200);
+                long wait =
+                        r.retryAfterMs > 0
+                                ? Math.min(r.retryAfterMs, 10_000)
+                                : (long) (300 * Math.pow(2, attempt))
+                                        + (long) (Math.random() * 200);
                 if (!sleep(t, wait)) return Result.of(Type.CANCELLED);
             }
         }
@@ -499,8 +615,11 @@ public final class MediaCache {
         long end = System.currentTimeMillis() + ms;
         while (System.currentTimeMillis() < end) {
             if (t.cancelled) return false;
-            try { Thread.sleep(Math.min(50, Math.max(1, end - System.currentTimeMillis()))); }
-            catch (InterruptedException e) { return false; }
+            try {
+                Thread.sleep(Math.min(50, Math.max(1, end - System.currentTimeMillis())));
+            } catch (InterruptedException e) {
+                return false;
+            }
         }
         return !t.cancelled;
     }
@@ -532,7 +651,9 @@ public final class MediaCache {
             long total;
             boolean append;
             if (code == 206 && have > 0) {
-                Matcher m = CONTENT_RANGE.matcher(c.header("Content-Range") == null ? "" : c.header("Content-Range"));
+                Matcher m =
+                        CONTENT_RANGE.matcher(
+                                c.header("Content-Range") == null ? "" : c.header("Content-Range"));
                 if (!m.matches() || Long.parseLong(m.group(1)) != have) {
                     part.delete();
                     return new Result(Type.RETRY, 0, code, 1);
@@ -557,7 +678,8 @@ public final class MediaCache {
             t.done = have;
             long written = have;
             long lastProgress = 0;
-            try (InputStream in = c.body(); OutputStream out = new FileOutputStream(part, append)) {
+            try (InputStream in = c.body();
+                    OutputStream out = new FileOutputStream(part, append)) {
                 byte[] buf = new byte[BUF];
                 int n;
                 while ((n = in.read(buf)) > 0) {
@@ -619,7 +741,9 @@ public final class MediaCache {
 
     private void progress(Task t, long done, long total) {
         List<Request> reqs;
-        synchronized (lock) { reqs = new ArrayList<>(t.reqs); }
+        synchronized (lock) {
+            reqs = new ArrayList<>(t.reqs);
+        }
         for (Request r : reqs) r.postProgress(done, total);
     }
 
@@ -629,7 +753,10 @@ public final class MediaCache {
         File plain = null;
         try {
             if (r.kind == TEMP) {
-                if (!s.encrypted) { r.postFailure(new Failure(Failure.Kind.DECODE, 0, 0, "not encrypted")); return; }
+                if (!s.encrypted) {
+                    r.postFailure(new Failure(Failure.Kind.DECODE, 0, 0, "not encrypted"));
+                    return;
+                }
                 plain = tempPlain();
                 if (!decrypt(r.raw, plain, s)) {
                     deleteTemp(plain);
@@ -653,9 +780,10 @@ public final class MediaCache {
             }
 
             int[] dims = new int[2];
-            Bitmap bmp = r.kind == THUMB
-                ? decoder.videoFrame(source, Math.max(s.targetW, 64), dims)
-                : decoder.decode(source, s.targetW, s.targetH, dims);
+            Bitmap bmp =
+                    r.kind == THUMB
+                            ? decoder.videoFrame(source, Math.max(s.targetW, 64), dims)
+                            : decoder.decode(source, s.targetW, s.targetH, dims);
             if (plain != null) {
                 deleteTemp(plain);
                 plain = null;
@@ -674,10 +802,14 @@ public final class MediaCache {
                 r.postFailure(f);
                 return;
             }
-            (s.encrypted ? secureMem : plainMem).put(memKey(s, r.kind), new Entry(bmp, dims[0], dims[1]));
+            (s.encrypted ? secureMem : plainMem)
+                    .put(memKey(s, r.kind), new Entry(bmp, dims[0], dims[1]));
             r.postBitmap(bmp, dims[0], dims[1]);
         } catch (Throwable t) {
-            if (plain != null) { deleteTemp(plain); plain = null; }
+            if (plain != null) {
+                deleteTemp(plain);
+                plain = null;
+            }
             r.postFailure(new Failure(Failure.Kind.DECODE, 0, 0, String.valueOf(t)));
         } finally {
             if (plain != null) deleteTemp(plain);
@@ -693,7 +825,7 @@ public final class MediaCache {
     private boolean decrypt(File cipher, File plain, Spec s) {
         if (s.key == null || s.channelId == null || s.senderId == null) return false;
         try (InputStream in = new FileInputStream(cipher);
-             OutputStream out = new BufferedOutputStream(new FileOutputStream(plain), BUF)) {
+                OutputStream out = new BufferedOutputStream(new FileOutputStream(plain), BUF)) {
             return Crypto.decryptStream(in, out, s.key, s.channelId, s.senderId);
         } catch (IOException e) {
             return false;
@@ -711,31 +843,43 @@ public final class MediaCache {
         if (f.delete()) diskBytes.addAndGet(-len);
     }
 
-    File rawFile(String dk) { return new File(new File(rawDir, dk.substring(0, 2)), dk); }
+    File rawFile(String dk) {
+        return new File(new File(rawDir, dk.substring(0, 2)), dk);
+    }
 
-    File partFile(String dk) { return new File(partDir, dk + ".part"); }
+    File partFile(String dk) {
+        return new File(partDir, dk + ".part");
+    }
 
     private void startupScan() {
         try {
             long now = System.currentTimeMillis();
             File[] parts = partDir.listFiles();
-            if (parts != null) for (File p : parts) if (now - p.lastModified() > PART_MAX_AGE_MS) p.delete();
+            if (parts != null)
+                for (File p : parts) if (now - p.lastModified() > PART_MAX_AGE_MS) p.delete();
             long total = 0;
             File[] shards = rawDir.listFiles();
-            if (shards != null) for (File sh : shards) {
-                File[] files = sh.listFiles();
-                if (files != null) for (File f : files) total += f.length();
-            }
+            if (shards != null)
+                for (File sh : shards) {
+                    File[] files = sh.listFiles();
+                    if (files != null) for (File f : files) total += f.length();
+                }
             diskBytes.set(total);
             trimIfNeeded();
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     private void trimIfNeeded() {
         if (diskBytes.get() <= diskMax || !trimming.compareAndSet(false, true)) return;
-        ioPool.execute(() -> {
-            try { trim(); } finally { trimming.set(false); }
-        });
+        ioPool.execute(
+                () -> {
+                    try {
+                        trim();
+                    } finally {
+                        trimming.set(false);
+                    }
+                });
     }
 
     void trim() {
@@ -774,7 +918,9 @@ public final class MediaCache {
         return s.diskKey() + "|" + kind + "|" + s.targetW + "x" + s.targetH;
     }
 
-    private static final String[] KEPT_PARAMS = {"animated", "format", "height", "quality", "size", "width"};
+    private static final String[] KEPT_PARAMS = {
+        "animated", "format", "height", "quality", "size", "width"
+    };
 
     static String normalize(String url) {
         int hash = url.indexOf('#');
@@ -785,7 +931,8 @@ public final class MediaCache {
         int schemeEnd = base.indexOf("://");
         if (schemeEnd > 0) {
             int pathStart = base.indexOf('/', schemeEnd + 3);
-            String head = (pathStart < 0 ? base : base.substring(0, pathStart)).toLowerCase(Locale.ROOT);
+            String head =
+                    (pathStart < 0 ? base : base.substring(0, pathStart)).toLowerCase(Locale.ROOT);
             base = head + (pathStart < 0 ? "" : base.substring(pathStart));
         }
         List<String> kept = new ArrayList<>();
@@ -811,7 +958,8 @@ public final class MediaCache {
 
     static String sha256Hex(String s) {
         try {
-            byte[] d = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            byte[] d =
+                    MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(64);
             for (byte b : d) sb.append(String.format("%02x", b & 0xFF));
             return sb.toString();
@@ -821,7 +969,10 @@ public final class MediaCache {
     }
 
     public static String previewUrl(String url, String proxyUrl, int w, int h) {
-        String base = proxyUrl != null && !proxyUrl.isEmpty() && !"null".equals(proxyUrl) ? proxyUrl : url;
+        String base =
+                proxyUrl != null && !proxyUrl.isEmpty() && !"null".equals(proxyUrl)
+                        ? proxyUrl
+                        : url;
         if (base == null || w <= 0 || h <= 0) return base;
         int schemeEnd = base.indexOf("://");
         if (schemeEnd < 0) return base;
@@ -830,16 +981,27 @@ public final class MediaCache {
         String scheme = base.substring(0, schemeEnd);
         String host = base.substring(schemeEnd + 3, pathStart).toLowerCase(Locale.ROOT);
         String rest = base.substring(pathStart);
-        boolean cdnAttachment = host.equals("cdn.discordapp.com") && rest.startsWith("/attachments/");
+        boolean cdnAttachment =
+                host.equals("cdn.discordapp.com") && rest.startsWith("/attachments/");
         boolean proxy = host.equals("media.discordapp.net") || host.endsWith(".discordapp.net");
         if (!cdnAttachment && !proxy) return base;
         if (rest.contains("width=") || rest.contains("format=")) return base;
         if (cdnAttachment) host = "media.discordapp.net";
         String sep = rest.contains("?") ? "&" : "?";
-        return scheme + "://" + host + rest + sep + "format=webp&width=" + Math.min(w, 2048) + "&height=" + Math.min(h, 2048);
+        return scheme
+                + "://"
+                + host
+                + rest
+                + sep
+                + "format=webp&width="
+                + Math.min(w, 2048)
+                + "&height="
+                + Math.min(h, 2048);
     }
 
-    interface Sizer<V> { long size(V v); }
+    interface Sizer<V> {
+        long size(V v);
+    }
 
     static final class ByteLru<V> {
         private final LinkedHashMap<String, V> map = new LinkedHashMap<>(16, 0.75f, true);
@@ -852,7 +1014,9 @@ public final class MediaCache {
             this.sizer = sizer;
         }
 
-        synchronized V get(String k) { return map.get(k); }
+        synchronized V get(String k) {
+            return map.get(k);
+        }
 
         synchronized void put(String k, V v) {
             V old = map.put(k, v);
@@ -872,9 +1036,13 @@ public final class MediaCache {
             size = 0;
         }
 
-        synchronized long size() { return size; }
+        synchronized long size() {
+            return size;
+        }
 
-        long max() { return max; }
+        long max() {
+            return max;
+        }
     }
 
     private static volatile MediaCache instance;

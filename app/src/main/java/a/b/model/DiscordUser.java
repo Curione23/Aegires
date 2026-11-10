@@ -24,8 +24,13 @@ public class DiscordUser {
 
     public long createdAtMs;
 
-    public DiscordUser(String id, String username, String globalName,
-            String avatar, String banner, String bio) {
+    public DiscordUser(
+            String id,
+            String username,
+            String globalName,
+            String avatar,
+            String banner,
+            String bio) {
         this.id = id;
         this.username = username;
         this.globalName = globalName;
@@ -49,10 +54,14 @@ public class DiscordUser {
             banner = profile.optString("banner", null);
         }
 
-        DiscordUser u = new DiscordUser(id, username, globalName,
-                user.isNull("avatar") ? null : user.optString("avatar", null),
-                banner,
-                null);
+        DiscordUser u =
+                new DiscordUser(
+                        id,
+                        username,
+                        globalName,
+                        user.isNull("avatar") ? null : user.optString("avatar", null),
+                        banner,
+                        null);
 
         u.bot = user.optBoolean("bot", false);
         u.system = user.optBoolean("system", false);

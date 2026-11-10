@@ -1,10 +1,11 @@
 package a.b.screen;
 
-import java.util.Locale;
 import a.b.MainActivity;
 import a.b.model.Role;
 import a.b.util.MemberListStore.Entry;
 import a.b.util.Ui;
+
+import java.util.Locale;
 
 /** Stateless presentation helpers for member rows. */
 final class MemberPresentation {
@@ -30,9 +31,10 @@ final class MemberPresentation {
             Role r = activity.roleCache != null ? activity.roleCache.get(e.groupId) : null;
             name = (r != null && Ui.isReal(r.name)) ? r.name : "Role";
         }
-        int count = activity.memberList != null
-            ? activity.memberList.groupCount(e.groupId, e.count)
-            : e.count;
+        int count =
+                activity.memberList != null
+                        ? activity.memberList.groupCount(e.groupId, e.count)
+                        : e.count;
         return name.toUpperCase(Locale.US) + " \u2014 " + count;
     }
 

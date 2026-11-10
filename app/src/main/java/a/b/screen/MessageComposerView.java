@@ -6,12 +6,12 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import a.b.model.Message;
 import a.b.util.Crypto;
 import a.b.util.Ui;
@@ -31,7 +31,6 @@ final class MessageComposerView {
     private ImageView attachIcon, sendIcon;
     private TextView replyText, e2eePill, attachText;
     private LinearLayout attachBar, replyBar;
-
     private String editingId, replyToId;
     private android.net.Uri pendingFileUri;
     private String pendingFileName, pendingMimeType;
@@ -53,13 +52,14 @@ final class MessageComposerView {
         attachIcon.setBackground(Ui.ripple(Ui.oval(Ui.BG_INPUT), -1));
         attachIcon.setClickable(true);
         setAttachCancel(false);
-        attachIcon.setOnClickListener(v -> {
-            if (editingId != null) {
-                cancelEdit();
-            } else if (host.picker() != null) {
-                host.picker().pickImage();
-            }
-        });
+        attachIcon.setOnClickListener(
+                v -> {
+                    if (editingId != null) {
+                        cancelEdit();
+                    } else if (host.picker() != null) {
+                        host.picker().pickImage();
+                    }
+                });
         LinearLayout.LayoutParams attachLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         attachLp.setMarginEnd(dp(6));
         row.addView(attachIcon, attachLp);
@@ -74,14 +74,23 @@ final class MessageComposerView {
         input.setPadding(dp(14), dp(8), dp(14), dp(8));
         input.setMinHeight(dp(40));
         input.setMaxLines(6);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-            | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        input.addTextChangedListener(new android.text.TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(android.text.Editable e) { updateSendState(); }
-        });
+        input.setInputType(
+                android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                        | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.addTextChangedListener(
+                new android.text.TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int a, int b, int c) {}
+
+                    @Override
+                    public void afterTextChanged(android.text.Editable e) {
+                        updateSendState();
+                    }
+                });
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(0, WRAP, 1f);
         inputLp.setMargins(dp(4), 0, dp(4), 0);
         row.addView(input, inputLp);
@@ -164,23 +173,51 @@ final class MessageComposerView {
         return e2eePill;
     }
 
-    String text() { return input == null ? "" : input.getText().toString(); }
-    String getEditingId() { return editingId; }
-    String getReplyToId() { return replyToId; }
-    android.net.Uri getPendingFileUri() { return pendingFileUri; }
-    String getPendingFileName() { return pendingFileName; }
-    String getPendingMimeType() { return pendingMimeType; }
-    int getPendingImageWidth() { return pendingImageWidth; }
-    int getPendingImageHeight() { return pendingImageHeight; }
+    String text() {
+        return input == null ? "" : input.getText().toString();
+    }
 
-    void clearText() { if (input != null) input.setText(""); }
+    String getEditingId() {
+        return editingId;
+    }
+
+    String getReplyToId() {
+        return replyToId;
+    }
+
+    android.net.Uri getPendingFileUri() {
+        return pendingFileUri;
+    }
+
+    String getPendingFileName() {
+        return pendingFileName;
+    }
+
+    String getPendingMimeType() {
+        return pendingMimeType;
+    }
+
+    int getPendingImageWidth() {
+        return pendingImageWidth;
+    }
+
+    int getPendingImageHeight() {
+        return pendingImageHeight;
+    }
+
+    void clearText() {
+        if (input != null) input.setText("");
+    }
+
     void restoreText(String text) {
         if (input == null || text == null) return;
         input.setText(text);
         input.setSelection(text.length());
     }
 
-    void requestInputFocus() { if (input != null) input.requestFocus(); }
+    void requestInputFocus() {
+        if (input != null) input.requestFocus();
+    }
 
     void setAttachment(android.net.Uri uri, String name, String mime, int w, int h) {
         pendingFileUri = uri;
@@ -212,7 +249,8 @@ final class MessageComposerView {
         } else {
             preview = msg.content.replace('\n', ' ');
         }
-        if (preview.length() > REPLY_PREVIEW_LEN) preview = preview.substring(0, REPLY_PREVIEW_LEN) + "\u2026";
+        if (preview.length() > REPLY_PREVIEW_LEN)
+            preview = preview.substring(0, REPLY_PREVIEW_LEN) + "\u2026";
         String who = host.actions() != null ? host.actions().nameOf(msg) : "Unknown";
         replyText.setText("Replying to " + who + (preview.isEmpty() ? "" : ": " + preview));
         replyBar.setVisibility(View.VISIBLE);
@@ -237,9 +275,13 @@ final class MessageComposerView {
         setAttachCancel(true);
         try {
             android.view.inputmethod.InputMethodManager imm =
-                (android.view.inputmethod.InputMethodManager) host.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        } catch (Exception ignored) {}
+                    (android.view.inputmethod.InputMethodManager)
+                            host.activity.getSystemService(
+                                    android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null)
+                imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        } catch (Exception ignored) {
+        }
         host.scrollToMessage(msg.id);
     }
 
@@ -255,7 +297,8 @@ final class MessageComposerView {
         if (host.forced || host.activity == null || host.activity.e2eeKey == null) return;
         host.activity.e2eeEnabled = !host.activity.e2eeEnabled;
         updateE2eePillState();
-        host.activity.toast(host.activity.e2eeEnabled ? "Encryption enabled" : "Encryption disabled");
+        host.activity.toast(
+                host.activity.e2eeEnabled ? "Encryption enabled" : "Encryption disabled");
     }
 
     void updateE2eePillState() {
@@ -284,15 +327,17 @@ final class MessageComposerView {
         if (attachBar == null) return;
         boolean has = pendingFileUri != null;
         attachBar.setVisibility(has ? View.VISIBLE : View.GONE);
-        if (has && attachText != null) attachText.setText(pendingFileName != null ? pendingFileName : "attachment");
+        if (has && attachText != null)
+            attachText.setText(pendingFileName != null ? pendingFileName : "attachment");
         updateSendState();
     }
 
     private void updateSendState() {
         if (sendIcon == null || input == null) return;
-        boolean can = input.getText().toString().trim().length() > 0
-            || (editingId == null && pendingFileUri != null);
-            
+        boolean can =
+                input.getText().toString().trim().length() > 0
+                        || (editingId == null && pendingFileUri != null);
+
         if (can) {
             sendIcon.setBackground(Ui.ripple(Ui.oval(Ui.BLURPLE), -1));
             sendIcon.setImageDrawable(new Ui.Icon(Ui.I_SEND, Color.WHITE));
@@ -319,5 +364,7 @@ final class MessageComposerView {
         replyToId = null;
     }
 
-    private int dp(int v) { return (int) (v * host.density); }
+    private int dp(int v) {
+        return (int) (v * host.density);
+    }
 }

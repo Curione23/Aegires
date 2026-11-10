@@ -9,12 +9,14 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.List;
-import java.util.Locale;
+
 import a.b.MainActivity;
 import a.b.model.Channel;
 import a.b.model.Guild;
 import a.b.util.Ui;
+
+import java.util.List;
+import java.util.Locale;
 
 /** Builds the views used by {@link ChannelListScreen}. */
 final class ChannelViewFactory {
@@ -23,7 +25,11 @@ final class ChannelViewFactory {
     private final float density;
     private final CollapsedCategoryStore collapsedStore;
 
-    ChannelViewFactory(MainActivity activity, String guildId, float density, CollapsedCategoryStore collapsedStore) {
+    ChannelViewFactory(
+            MainActivity activity,
+            String guildId,
+            float density,
+            CollapsedCategoryStore collapsedStore) {
         this.activity = activity;
         this.guildId = guildId;
         this.density = density;
@@ -39,16 +45,31 @@ final class ChannelViewFactory {
         wrap.setClipToOutline(true);
 
         String name = guild.name == null ? "" : guild.name.trim();
-        TextView initial = Ui.text(activity, name.isEmpty() ? "?" : name.substring(0, name.offsetByCodePoints(0, 1)).toUpperCase(Locale.US), Color.WHITE, 14);
+        TextView initial =
+                Ui.text(
+                        activity,
+                        name.isEmpty()
+                                ? "?"
+                                : name.substring(0, name.offsetByCodePoints(0, 1))
+                                        .toUpperCase(Locale.US),
+                        Color.WHITE,
+                        14);
         initial.setTypeface(null, Typeface.BOLD);
         initial.setGravity(Gravity.CENTER);
-        initial.setVisibility(hasIcon ? View.GONE : View.VISIBLE); // Hide placeholder if icon exists
+        initial.setVisibility(
+                hasIcon ? View.GONE : View.VISIBLE); // Hide placeholder if icon exists
         wrap.addView(initial, new FrameLayout.LayoutParams(-1, -1));
-    
+
         if (hasIcon && activity != null && activity.imageLoader != null) {
             ImageView icon = new ImageView(activity);
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            activity.imageLoader.load("https://cdn.discordapp.com/icons/" + guild.id + "/" + guild.icon + ".png?size=64", icon);
+            activity.imageLoader.load(
+                    "https://cdn.discordapp.com/icons/"
+                            + guild.id
+                            + "/"
+                            + guild.icon
+                            + ".png?size=64",
+                    icon);
             wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
         }
         return wrap;
@@ -75,7 +96,8 @@ final class ChannelViewFactory {
 
         final ImageView arrow = Ui.iconView(activity, Ui.I_CHEVRON_DOWN, Ui.MUTED, 16);
         header.addView(arrow);
-        TextView title = Ui.sectionLabel(activity, category.name == null ? "Category" : category.name);
+        TextView title =
+                Ui.sectionLabel(activity, category.name == null ? "Category" : category.name);
         title.setPadding(dp(2), 0, 0, 0);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
@@ -86,16 +108,19 @@ final class ChannelViewFactory {
         for (Channel ch : kids) if (ch != null) box.addView(createChannelRow(ch));
 
         final boolean canPersist = category.id != null;
-        final boolean collapsed = canPersist && collapsedStore != null && collapsedStore.isCollapsed(category.id);
+        final boolean collapsed =
+                canPersist && collapsedStore != null && collapsedStore.isCollapsed(category.id);
         box.setVisibility(collapsed ? View.GONE : View.VISIBLE);
         arrow.setRotation(collapsed ? -90f : 0f);
 
-        header.setOnClickListener(v -> {
-            boolean show = box.getVisibility() != View.VISIBLE;
-            box.setVisibility(show ? View.VISIBLE : View.GONE);
-            arrow.setRotation(show ? 0f : -90f);
-            if (canPersist && collapsedStore != null) collapsedStore.setCollapsed(category.id, !show);
-        });
+        header.setOnClickListener(
+                v -> {
+                    boolean show = box.getVisibility() != View.VISIBLE;
+                    box.setVisibility(show ? View.VISIBLE : View.GONE);
+                    arrow.setRotation(show ? 0f : -90f);
+                    if (canPersist && collapsedStore != null)
+                        collapsedStore.setCollapsed(category.id, !show);
+                });
 
         layout.addView(header);
         layout.addView(box);
@@ -130,11 +155,13 @@ final class ChannelViewFactory {
         if (ChannelTreeBuilder.isOpenable(ch.type)) {
             row.setClickable(true);
             row.setBackground(Ui.ripple(null, 0));
-            row.setOnClickListener(v -> {
-                if (activity == null) return;
-                if (ch.type == 15 || ch.type == 16) activity.navigate(new ForumThreadListScreen(guildId, ch));
-                else activity.navigate(new MessageListScreen(guildId, ch.id));
-            });
+            row.setOnClickListener(
+                    v -> {
+                        if (activity == null) return;
+                        if (ch.type == 15 || ch.type == 16)
+                            activity.navigate(new ForumThreadListScreen(guildId, ch));
+                        else activity.navigate(new MessageListScreen(guildId, ch.id));
+                    });
         } else {
             row.setAlpha(0.5f);
         }
@@ -143,18 +170,28 @@ final class ChannelViewFactory {
 
     private static String channelPrefix(int type) {
         switch (type) {
-            case 0:  return "#";
-            case 2:  return "\uD83D\uDD0A";
-            case 5:  return "\uD83D\uDCE2";
+            case 0:
+                return "#";
+            case 2:
+                return "\uD83D\uDD0A";
+            case 5:
+                return "\uD83D\uDCE2";
             case 10:
             case 11:
-            case 12: return "\u21B3";
-            case 13: return "\uD83C\uDF99";
-            case 15: return "\uD83D\uDDC4";
-            case 16: return "\uD83D\uDDBC";
-            default: return "#";
+            case 12:
+                return "\u21B3";
+            case 13:
+                return "\uD83C\uDF99";
+            case 15:
+                return "\uD83D\uDDC4";
+            case 16:
+                return "\uD83D\uDDBC";
+            default:
+                return "#";
         }
     }
 
-    private int dp(int v) { return (int) (v * density); }
+    private int dp(int v) {
+        return (int) (v * density);
+    }
 }

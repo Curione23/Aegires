@@ -3,9 +3,15 @@ package a.b.util;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.LruCache;
+
+import a.b.model.Embed;
+import a.b.model.EmbedField;
+import a.b.model.Message;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -13,9 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import a.b.model.Embed;
-import a.b.model.EmbedField;
-import a.b.model.Message;
 
 public class MessageCacheManager {
     private static final int MAX_CHANNELS = 30;
@@ -26,15 +29,19 @@ public class MessageCacheManager {
     private final LruCache<String, List<Message>> memoryCache;
     private final Context context;
     private final SharedPreferences prefs;
-    private final java.util.concurrent.ExecutorService diskExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.ExecutorService diskExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
 
     public MessageCacheManager(Context context) {
         this.context = context;
         this.prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        this.memoryCache = new LruCache<String, List<Message>>(MAX_CHANNELS) {
-            @Override
-            protected int sizeOf(String key, List<Message> value) { return 1; }
-        };
+        this.memoryCache =
+                new LruCache<String, List<Message>>(MAX_CHANNELS) {
+                    @Override
+                    protected int sizeOf(String key, List<Message> value) {
+                        return 1;
+                    }
+                };
     }
 
     public synchronized List<Message> getMessages(String channelId) {
@@ -92,16 +99,19 @@ public class MessageCacheManager {
         if (messages == null || messages.isEmpty()) return;
 
         final List<Message> snapshot = new ArrayList<>(messages);
-        diskExecutor.execute(() -> {
-            JSONArray arr = new JSONArray();
-            int start = Math.max(0, snapshot.size() - DISK_SAVE_LIMIT);
-            for (int i = start; i < snapshot.size(); i++) {
-                arr.put(messageToJson(snapshot.get(i)));
-            }
-            try (FileOutputStream fos = context.openFileOutput(CACHE_FILE, Context.MODE_PRIVATE)) {
-                fos.write(arr.toString().getBytes(StandardCharsets.UTF_8));
-            } catch (Exception ignored) {}
-        });
+        diskExecutor.execute(
+                () -> {
+                    JSONArray arr = new JSONArray();
+                    int start = Math.max(0, snapshot.size() - DISK_SAVE_LIMIT);
+                    for (int i = start; i < snapshot.size(); i++) {
+                        arr.put(messageToJson(snapshot.get(i)));
+                    }
+                    try (FileOutputStream fos =
+                            context.openFileOutput(CACHE_FILE, Context.MODE_PRIVATE)) {
+                        fos.write(arr.toString().getBytes(StandardCharsets.UTF_8));
+                    } catch (Exception ignored) {
+                    }
+                });
     }
 
     public List<Message> loadLastChannelMessages(String channelId) {
@@ -119,26 +129,35 @@ public class MessageCacheManager {
             List<Message> list = new ArrayList<>();
             for (int i = 0; i < arr.length(); i++) list.add(Message.fromJson(arr.getJSONObject(i)));
             return list;
-        } catch (Exception e) { return null; }
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    public String getLastGuildId() { return prefs.getString("last_guild", null); }
-    public String getLastChannelId() { return prefs.getString("last_channel", null); }
+    public String getLastGuildId() {
+        return prefs.getString("last_guild", null);
+    }
+
+    public String getLastChannelId() {
+        return prefs.getString("last_channel", null);
+    }
 
     private JSONObject messageToJson(Message m) {
         JSONObject o = new JSONObject();
         try {
-            o.put("id", m.id); 
-            o.put("content", m.content); 
+            o.put("id", m.id);
+            o.put("content", m.content);
             o.put("timestamp", m.timestamp);
-            
+
             if (m.author != null) {
                 JSONObject a = new JSONObject();
-                a.put("id", m.author.id); a.put("username", m.author.username);
-                a.put("global_name", m.author.globalName); a.put("avatar", m.author.avatar);
+                a.put("id", m.author.id);
+                a.put("username", m.author.username);
+                a.put("global_name", m.author.globalName);
+                a.put("avatar", m.author.avatar);
                 o.put("author", a);
             }
-            
+
             if (m.memberNick != null || (m.roleIds != null && !m.roleIds.isEmpty())) {
                 JSONObject mem = new JSONObject();
                 if (m.memberNick != null) mem.put("nick", m.memberNick);
@@ -149,7 +168,7 @@ public class MessageCacheManager {
                 }
                 o.put("member", mem);
             }
-            
+
             if (m.replyToMessageId != null) {
                 JSONObject ref = new JSONObject();
                 ref.put("message_id", m.replyToMessageId);
@@ -198,21 +217,24 @@ public class MessageCacheManager {
                         JSONObject t = new JSONObject();
                         t.put("url", e.thumbnailUrl);
                         if (e.thumbnailProxyUrl != null) t.put("proxy_url", e.thumbnailProxyUrl);
-                        t.put("width", e.thumbnailWidth); t.put("height", e.thumbnailHeight);
+                        t.put("width", e.thumbnailWidth);
+                        t.put("height", e.thumbnailHeight);
                         eo.put("thumbnail", t);
                     }
                     if (e.imageUrl != null) {
                         JSONObject i = new JSONObject();
                         i.put("url", e.imageUrl);
                         if (e.imageProxyUrl != null) i.put("proxy_url", e.imageProxyUrl);
-                        i.put("width", e.imageWidth); i.put("height", e.imageHeight);
+                        i.put("width", e.imageWidth);
+                        i.put("height", e.imageHeight);
                         eo.put("image", i);
                     }
                     if (e.videoUrl != null) {
                         JSONObject v = new JSONObject();
                         v.put("url", e.videoUrl);
                         if (e.videoProxyUrl != null) v.put("proxy_url", e.videoProxyUrl);
-                        v.put("width", e.videoWidth); v.put("height", e.videoHeight);
+                        v.put("width", e.videoWidth);
+                        v.put("height", e.videoHeight);
                         eo.put("video", v);
                     }
                     if (e.footer != null) {
@@ -220,7 +242,7 @@ public class MessageCacheManager {
                         f.put("text", e.footer);
                         eo.put("footer", f);
                     }
-                    
+
                     if (e.fields != null && !e.fields.isEmpty()) {
                         JSONArray fieldsArr = new JSONArray();
                         for (EmbedField field : e.fields) {
@@ -245,13 +267,16 @@ public class MessageCacheManager {
                     if (a.proxyUrl != null) ao.put("proxy_url", a.proxyUrl);
                     ao.put("filename", a.filename);
                     if (a.type != null) ao.put("content_type", a.type);
-                    ao.put("width", a.width); ao.put("height", a.height); ao.put("size", a.size);
+                    ao.put("width", a.width);
+                    ao.put("height", a.height);
+                    ao.put("size", a.size);
                     attsArr.put(ao);
                 }
                 o.put("attachments", attsArr);
             }
 
-        } catch (JSONException ignored) {}
+        } catch (JSONException ignored) {
+        }
         return o;
     }
 }

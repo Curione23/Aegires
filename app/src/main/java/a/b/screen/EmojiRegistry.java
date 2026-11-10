@@ -2,13 +2,15 @@ package a.b.screen;
 
 import android.graphics.Bitmap;
 import android.util.LruCache;
+
+import a.b.util.MediaCache;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import a.b.util.MediaCache;
 
 /** Caches custom emoji bitmaps; lazy-loads missing ones and re-renders affected messages. */
 final class EmojiRegistry {
@@ -44,35 +46,52 @@ final class EmojiRegistry {
         if (adapter.activity == null || !loading.add(id)) return;
         MediaCache.Spec spec = MediaCache.Spec.plain(url, adapter.jumboSize, adapter.jumboSize);
         spec.maxBytes = 4L << 20;
-        MediaCache.get(adapter.activity.getApplicationContext()).loadBitmap(spec, new MediaCache.SimpleCallback() {
-            @Override public void onBitmap(Bitmap bmp, int srcW, int srcH) {
-                loading.remove(id);
-                if (adapter.activity == null) return;
-                Bitmap scaled = bmp;
-                if (bmp.getWidth() != adapter.jumboSize || bmp.getHeight() != adapter.jumboSize) {
-                    try {
-                        scaled = Bitmap.createScaledBitmap(bmp, adapter.jumboSize, adapter.jumboSize, true);
-                    } catch (OutOfMemoryError | IllegalArgumentException ignored) {
-                        scaled = bmp;
-                    }
-                }
-                cache.put(id, scaled);
-                Set<String> affected = messageMap.remove(id);
-                if (affected == null) return;
-                List<String> ids;
-                synchronized (affected) {
-                    ids = affected.isEmpty() ? Collections.<String>emptyList() : new ArrayList<>(affected);
-                }
-                if (!ids.isEmpty()) adapter.invalidateEmojis(ids);
-            }
-            @Override public void onFailure(MediaCache.Failure f) {
-                loading.remove(id);
-                messageMap.remove(id);
-            }
-            @Override public void onNeedsConfirm(long bytes) {
-                loading.remove(id);
-                messageMap.remove(id);
-            }
-        });
+        MediaCache.get(adapter.activity.getApplicationContext())
+                .loadBitmap(
+                        spec,
+                        new MediaCache.SimpleCallback() {
+                            @Override
+                            public void onBitmap(Bitmap bmp, int srcW, int srcH) {
+                                loading.remove(id);
+                                if (adapter.activity == null) return;
+                                Bitmap scaled = bmp;
+                                if (bmp.getWidth() != adapter.jumboSize
+                                        || bmp.getHeight() != adapter.jumboSize) {
+                                    try {
+                                        scaled =
+                                                Bitmap.createScaledBitmap(
+                                                        bmp,
+                                                        adapter.jumboSize,
+                                                        adapter.jumboSize,
+                                                        true);
+                                    } catch (OutOfMemoryError | IllegalArgumentException ignored) {
+                                        scaled = bmp;
+                                    }
+                                }
+                                cache.put(id, scaled);
+                                Set<String> affected = messageMap.remove(id);
+                                if (affected == null) return;
+                                List<String> ids;
+                                synchronized (affected) {
+                                    ids =
+                                            affected.isEmpty()
+                                                    ? Collections.<String>emptyList()
+                                                    : new ArrayList<>(affected);
+                                }
+                                if (!ids.isEmpty()) adapter.invalidateEmojis(ids);
+                            }
+
+                            @Override
+                            public void onFailure(MediaCache.Failure f) {
+                                loading.remove(id);
+                                messageMap.remove(id);
+                            }
+
+                            @Override
+                            public void onNeedsConfirm(long bytes) {
+                                loading.remove(id);
+                                messageMap.remove(id);
+                            }
+                        });
     }
 }

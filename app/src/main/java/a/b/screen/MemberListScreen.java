@@ -9,8 +9,10 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import a.b.MainActivity;
 import a.b.util.MemberListStore;
 import a.b.util.Ui;
@@ -53,11 +55,13 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         adapter = new MemberListAdapter(activity, guildId);
         list.setAdapter(adapter);
         rangeLoader = new MemberRangeLoader(activity, guildId, channelId, list, ui);
-        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override public void onScrolled(RecyclerView rv, int dx, int dy) {
-                if (rangeLoader != null) rangeLoader.ensureLoaded();
-            }
-        });
+        list.addOnScrollListener(
+                new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(RecyclerView rv, int dx, int dy) {
+                        if (rangeLoader != null) rangeLoader.ensureLoaded();
+                    }
+                });
         body.addView(list, new FrameLayout.LayoutParams(-1, -1));
 
         emptyView = Ui.emptyState(activity, "Loading members\u2026");
@@ -71,13 +75,15 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         return view = root;
     }
 
-    @Override public void onMemberListChanged() {
+    @Override
+    public void onMemberListChanged() {
         if (activity == null) return;
         ui.removeCallbacks(refresh);
         ui.postDelayed(refresh, 120);
     }
 
-    @Override public void onMemberListRangeChanged(int positionStart, int itemCount) {
+    @Override
+    public void onMemberListRangeChanged(int positionStart, int itemCount) {
         if (adapter != null && itemCount > 0) {
             adapter.notifyItemRangeChanged(positionStart, itemCount);
         }
@@ -87,36 +93,44 @@ public class MemberListScreen implements Screen, MemberListStore.Listener {
         if (activity == null) return;
         if (emptyView == null || bar == null) return;
         MemberListStore store = activity.memberList;
-        
+
         boolean mine = store != null && guildId.equals(store.guildId());
         int total = mine ? store.total() : 0;
-        
+
         boolean bot = activity.apiClient != null && activity.apiClient.isBotAccount();
         if (!bot) {
             emptyView.setText("Loading members\u2026");
         }
         emptyView.setVisibility(total == 0 ? View.VISIBLE : View.GONE);
-        
+
         if (mine && store.memberCount() > 0) {
-            bar.setSubtitle(store.memberCount() + " members \u00B7 " + store.onlineCount() + " online");
+            bar.setSubtitle(
+                    store.memberCount() + " members \u00B7 " + store.onlineCount() + " online");
         } else {
             bar.setSubtitle(null);
         }
         if (adapter != null) adapter.notifyDataSetChanged();
-        
-        if (rangeLoader != null) rangeLoader.ensureLoaded(); 
+
+        if (rangeLoader != null) rangeLoader.ensureLoaded();
     }
 
-    @Override public View getView() { return view; }
-    @Override public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+    @Override
+    public View getView() {
+        return view;
+    }
 
-    @Override public void onResume() {
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {}
+
+    @Override
+    public void onResume() {
         if (activity == null) return;
         activity.memberList.addListener(this);
         refreshNow();
     }
 
-    @Override public void onPause() {
+    @Override
+    public void onPause() {
         if (activity != null) activity.memberList.removeListener(this);
     }
 

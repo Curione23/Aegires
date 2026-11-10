@@ -6,12 +6,14 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.List;
-import java.util.Map;
+
 import a.b.MainActivity;
 import a.b.model.Channel;
 import a.b.util.TimeUtils;
 import a.b.util.Ui;
+
+import java.util.List;
+import java.util.Map;
 
 /** Rich row for a forum thread, showing title, state, activity and tags. */
 final class ForumThreadRowView {
@@ -19,7 +21,8 @@ final class ForumThreadRowView {
     private final String guildId;
     private final Map<String, Channel.ForumTag> tagsById;
 
-    ForumThreadRowView(MainActivity activity, String guildId, Map<String, Channel.ForumTag> tagsById) {
+    ForumThreadRowView(
+            MainActivity activity, String guildId, Map<String, Channel.ForumTag> tagsById) {
         this.activity = activity;
         this.guildId = guildId;
         this.tagsById = tagsById;
@@ -34,11 +37,12 @@ final class ForumThreadRowView {
         row.setPadding(dp(16), dp(12), dp(16), dp(12));
         row.setBackground(Ui.ripple(null, 0));
         row.setClickable(true);
-        row.setOnClickListener(v -> {
-            if (activity != null && thread.id != null) {
-                activity.navigate(new MessageListScreen(guildId, thread.id));
-            }
-        });
+        row.setOnClickListener(
+                v -> {
+                    if (activity != null && thread.id != null) {
+                        activity.navigate(new MessageListScreen(guildId, thread.id));
+                    }
+                });
 
         LinearLayout head = new LinearLayout(activity);
         head.setGravity(Gravity.CENTER_VERTICAL);
@@ -49,8 +53,12 @@ final class ForumThreadRowView {
             head.addView(pin);
         }
 
-        TextView title = Ui.text(activity, thread.name == null || thread.name.isEmpty() ? "(untitled)" : thread.name,
-            Ui.TEXT_HEADER, 16);
+        TextView title =
+                Ui.text(
+                        activity,
+                        thread.name == null || thread.name.isEmpty() ? "(untitled)" : thread.name,
+                        Ui.TEXT_HEADER,
+                        16);
         title.setTypeface(null, Typeface.BOLD);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
@@ -135,5 +143,7 @@ final class ForumThreadRowView {
         return view;
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }

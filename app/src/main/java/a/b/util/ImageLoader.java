@@ -12,12 +12,19 @@ public final class ImageLoader {
     private static final class Binding {
         final String url;
         MediaCache.Handle handle = MediaCache.NOOP;
-        Binding(String url) { this.url = url; }
+
+        Binding(String url) {
+            this.url = url;
+        }
     }
 
-    public void load(String url, ImageView imageView) { load(url, null, imageView); }
+    public void load(String url, ImageView imageView) {
+        load(url, null, imageView);
+    }
 
-    public void loadNoCrop(String url, ImageView imageView) { load(url, null, imageView); }
+    public void loadNoCrop(String url, ImageView imageView) {
+        load(url, null, imageView);
+    }
 
     public void load(final String url, String fallbackUrl, final ImageView imageView) {
         if (imageView == null) return;
@@ -31,13 +38,21 @@ public final class ImageLoader {
         imageView.setTag(binding);
         imageView.setImageDrawable(null);
 
-        MediaCache.Spec spec = MediaCache.Spec.plain(url, resolveTarget(imageView, true), resolveTarget(imageView, false));
+        MediaCache.Spec spec =
+                MediaCache.Spec.plain(
+                        url, resolveTarget(imageView, true), resolveTarget(imageView, false));
         spec.fallbackUrl = fallbackUrl;
-        binding.handle = MediaCache.get(imageView.getContext()).loadBitmap(spec, new MediaCache.SimpleCallback() {
-            @Override public void onBitmap(Bitmap bitmap, int srcW, int srcH) {
-                if (imageView.getTag() == binding) imageView.setImageBitmap(bitmap);
-            }
-        });
+        binding.handle =
+                MediaCache.get(imageView.getContext())
+                        .loadBitmap(
+                                spec,
+                                new MediaCache.SimpleCallback() {
+                                    @Override
+                                    public void onBitmap(Bitmap bitmap, int srcW, int srcH) {
+                                        if (imageView.getTag() == binding)
+                                            imageView.setImageBitmap(bitmap);
+                                    }
+                                });
     }
 
     public static void cancel(ImageView imageView) {
@@ -63,12 +78,19 @@ public final class ImageLoader {
         }
     }
 
-    public long cacheBytes() { return lastCache != null ? lastCache.memoryBytes() : 0; }
-    public long cacheMax() { return lastCache != null ? lastCache.memoryMax() : 0; }
+    public long cacheBytes() {
+        return lastCache != null ? lastCache.memoryBytes() : 0;
+    }
+
+    public long cacheMax() {
+        return lastCache != null ? lastCache.memoryMax() : 0;
+    }
 
     private static volatile MediaCache lastCache;
 
-    static void remember(MediaCache c) { lastCache = c; }
+    static void remember(MediaCache c) {
+        lastCache = c;
+    }
 
     private static int resolveTarget(ImageView imageView, boolean horizontal) {
         int laidOut = horizontal ? imageView.getWidth() : imageView.getHeight();

@@ -7,16 +7,18 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.List;
-import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+
 import a.b.MainActivity;
 import a.b.model.Guild;
 import a.b.model.MentionItem;
 import a.b.util.Crypto;
 import a.b.util.TimeUtils;
 import a.b.util.Ui;
+
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Builds a single row for the Mentions inbox. */
 final class MentionRowView {
@@ -29,7 +31,10 @@ final class MentionRowView {
     private final MentionChannelFetcher channelFetcher;
     private final Consumer<MentionItem> onOpen;
 
-    MentionRowView(MainActivity activity, MentionChannelFetcher channelFetcher, Consumer<MentionItem> onOpen) {
+    MentionRowView(
+            MainActivity activity,
+            MentionChannelFetcher channelFetcher,
+            Consumer<MentionItem> onOpen) {
         this.activity = activity;
         this.channelFetcher = channelFetcher;
         this.onOpen = onOpen;
@@ -41,7 +46,10 @@ final class MentionRowView {
         row.setPadding(dp(16), dp(12), dp(16), dp(12));
         row.setClickable(true);
         row.setBackground(Ui.ripple(m.unread ? Ui.rounded(0x14F0B232, 0) : null, 0));
-        row.setOnClickListener(v -> { if (onOpen != null) onOpen.accept(m); });
+        row.setOnClickListener(
+                v -> {
+                    if (onOpen != null) onOpen.accept(m);
+                });
 
         View bar = new View(activity);
         bar.setBackgroundColor(m.unread ? Ui.YELLOW : 0);
@@ -53,16 +61,22 @@ final class MentionRowView {
         ImageView avatar = new ImageView(activity);
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         avatar.setClipToOutline(true);
-        
+
         boolean hasAvatar = Ui.isReal(m.authorAvatar) && m.authorId != null;
-        
+
         avatar.setBackground(Ui.oval(hasAvatar ? Ui.BG_SECONDARY : Ui.avatarColor(m.authorId)));
-        
+
         LinearLayout.LayoutParams avLp = new LinearLayout.LayoutParams(dp(40), dp(40));
         avLp.setMarginEnd(dp(12));
-        
+
         if (hasAvatar) {
-            activity.imageLoader.load("https://cdn.discordapp.com/avatars/" + m.authorId + "/" + m.authorAvatar + ".png?size=128", avatar);
+            activity.imageLoader.load(
+                    "https://cdn.discordapp.com/avatars/"
+                            + m.authorId
+                            + "/"
+                            + m.authorAvatar
+                            + ".png?size=128",
+                    avatar);
         }
         row.addView(avatar, avLp);
 
@@ -121,7 +135,11 @@ final class MentionRowView {
         if (m.guildId != null) {
             List<Guild> gs = activity.guildCache.get("me");
             if (gs != null) {
-                for (Guild g : gs) if (g != null && g.id != null && g.id.equals(m.guildId)) { sb.append(" \u00B7 ").append(g.name); break; }
+                for (Guild g : gs)
+                    if (g != null && g.id != null && g.id.equals(m.guildId)) {
+                        sb.append(" \u00B7 ").append(g.name);
+                        break;
+                    }
             }
         }
         return sb.toString();
@@ -151,7 +169,12 @@ final class MentionRowView {
         return c.trim().isEmpty() ? "(no text)" : c;
     }
 
-    private static String replace(Pattern p, String in, String prefix, java.util.Map<String, String> names, String fallback) {
+    private static String replace(
+            Pattern p,
+            String in,
+            String prefix,
+            java.util.Map<String, String> names,
+            String fallback) {
         Matcher m = p.matcher(in);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
@@ -162,5 +185,7 @@ final class MentionRowView {
         return sb.toString();
     }
 
-    private int dp(int v) { return Ui.dp(activity, v); }
+    private int dp(int v) {
+        return Ui.dp(activity, v);
+    }
 }
