@@ -135,7 +135,7 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
         if (activity == null || m == null) return;
         activity.mentions.markRead(m);
         if (m.guildResolved) {
-            activity.navigate(new MessageListScreen(m.guildId, m.channelId));
+            activity.navigate(new MessageListScreen(m.guildId, m.channelId, m.id));
             return;
         }
         activity.apiClient.fetchChannelMeta(
@@ -147,7 +147,7 @@ public class NotificationsScreen implements Screen, MentionStore.Listener {
                         m.guildId =
                                 meta.isNull("guild_id") ? null : meta.optString("guild_id", null);
                         m.guildResolved = true;
-                        activity.navigate(new MessageListScreen(m.guildId, m.channelId));
+                        activity.navigate(new MessageListScreen(m.guildId, m.channelId, m.id));
                     }
 
                     @Override

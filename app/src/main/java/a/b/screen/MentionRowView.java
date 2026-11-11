@@ -11,6 +11,7 @@ import android.widget.TextView;
 import a.b.MainActivity;
 import a.b.model.Guild;
 import a.b.model.MentionItem;
+import a.b.model.Role;
 import a.b.util.Crypto;
 import a.b.util.TimeUtils;
 import a.b.util.Ui;
@@ -120,7 +121,12 @@ final class MentionRowView {
 
     private String whereLabel(MentionItem m) {
         StringBuilder sb = new StringBuilder();
-        if (m.everyone) sb.append("@everyone \u00B7 ");
+        if (m.everyone) sb.append(m.here ? "@here" : "@everyone").append(" \u00B7 ");
+        for (String roleId : m.roleIds) {
+            Role role = activity.roleCache.get(roleId);
+            sb.append('@').append(role != null && Ui.isReal(role.name) ? role.name : "role")
+                    .append(" \u00B7 ");
+        }
         if (m.channelId == null) {
             sb.append("(unknown channel)");
         } else {

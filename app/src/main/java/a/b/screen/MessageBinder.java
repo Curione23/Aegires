@@ -83,7 +83,17 @@ final class MessageBinder {
         String self = adapter.activity != null ? adapter.activity.selfId() : null;
         if (self == null || msg == null) return false;
         if (msg.author != null && self.equals(msg.author.id)) return false;
-        return msg.mentionedUserIds != null && msg.mentionedUserIds.contains(self);
+        if (msg.mentionEveryone) return true;
+        if (msg.mentionedUserIds != null && msg.mentionedUserIds.contains(self)) return true;
+        if (msg.mentionedRoleIds != null
+                && !msg.mentionedRoleIds.isEmpty()
+                && adapter.activity != null) {
+            java.util.Set<String> roles = adapter.activity.selfRoleIds(adapter.guildId);
+            for (String roleId : msg.mentionedRoleIds) {
+                if (roles.contains(roleId)) return true;
+            }
+        }
+        return false;
     }
 
     int getAuthorColor(Message msg) {

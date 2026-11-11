@@ -87,7 +87,15 @@ public final class MentionStore {
         return n;
     }
 
-    public void onMessageCreate(JSONObject d, String selfId, String viewingChannelId) {
+    public int unreadForGuild(String guildId) {
+        if (guildId == null) return 0;
+        int n = 0;
+        for (MentionItem m : items) if (m.unread && guildId.equals(m.guildId)) n++;
+        return n;
+    }
+
+    public void onMessageCreate(
+            JSONObject d, String selfId, String viewingChannelId, Set<String> selfRoleIds) {
         if (d == null || selfId == null) return;
         String channelId = d.optString("channel_id", null);
         JSONObject author = d.optJSONObject("author");
@@ -104,12 +112,15 @@ public final class MentionStore {
         }
         boolean mentioned = d.optBoolean("mention_everyone", false);
         JSONArray ms = d.optJSONArray("mentions");
-        for (int i = 0; ms != null && i < ms.length(); i++) {
+        for (int i = 0; ms != null && !mentioned && i < ms.length(); i++) {
             JSONObject u = ms.optJSONObject(i);
-            if (u != null && selfId.equals(u.optString("id", null))) {
+            if (u != null && selfId.equals(u.optString("id", null))) mentioned = true;
+        }
+        JSONArray roles = d.optJSONArray("mention_roles");
+        for (int i = 0; roles != null && !mentioned && i < roles.length(); i++) {
+            String roleId = roles.optString(i, null);
+            if (roleId != null && selfRoleIds != null && selfRoleIds.contains(roleId))
                 mentioned = true;
-                break;
-            }
         }
         if (!mentioned) return;
         try {

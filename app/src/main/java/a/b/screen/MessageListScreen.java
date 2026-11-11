@@ -32,6 +32,7 @@ public class MessageListScreen implements Screen {
     MainActivity activity;
     public final String guildId;
     public final String channelId;
+    private final String focusMessageId;
     public MessageAdapter adapter;
     public List<Message> messages = new ArrayList<>();
     final Set<String> messageIds = new HashSet<>();
@@ -45,20 +46,31 @@ public class MessageListScreen implements Screen {
     javax.crypto.SecretKey forcedKey;
 
     private MessageComposerView composer;
+    private MentionAutocomplete mentionAutocomplete;
     private MessageFeedController feed;
     private TypingIndicator typing;
     private MessageActionsController actions;
     private AttachmentPicker picker;
 
     private boolean sending;
+    private boolean focusFetchTried, focusFetching, focusScrolled;
 
     public MessageListScreen(String guildId, String channelId) {
+        this(guildId, channelId, null);
+    }
+
+    public MessageListScreen(String guildId, String channelId, String focusMessageId) {
         this.guildId = guildId;
         this.channelId = channelId;
+        this.focusMessageId = focusMessageId;
     }
 
     MessageComposerView composer() {
         return composer;
+    }
+
+    MentionAutocomplete mentionAutocomplete() {
+        return mentionAutocomplete;
     }
 
     MessageFeedController feed() {
@@ -102,6 +114,7 @@ public class MessageListScreen implements Screen {
         density = activity.getResources().getDisplayMetrics().density;
 
         composer = new MessageComposerView(this);
+        mentionAutocomplete = new MentionAutocomplete(this);
         typing = new TypingIndicator(this);
         actions = new MessageActionsController(this);
         picker = new AttachmentPicker(this);
@@ -112,6 +125,7 @@ public class MessageListScreen implements Screen {
         root.addView(buildHeader());
         root.addView(buildList(), new LinearLayout.LayoutParams(MATCH, 0, 1f));
         root.addView(typing.getView());
+        root.addView(mentionAutocomplete.build());
         root.addView(composer.buildReplyBar());
         root.addView(composer.buildAttachBar());
         root.addView(composer.buildPill());
@@ -193,6 +207,7 @@ public class MessageListScreen implements Screen {
                 new RecyclerView.OnScrollListener() {
                     @Override
                     public void onScrolled(RecyclerView rv, int dx, int dy) {
+                        if (mentionAutocomplete != null) mentionAutocomplete.hide();
                         if (layoutManager.findFirstVisibleItemPosition() <= 1)
                             feed.loadOlderMessages();
                     }
@@ -228,6 +243,7 @@ public class MessageListScreen implements Screen {
             }
             adapter.submitList(new ArrayList<>(messages));
             scrollToBottom();
+            onFeedLoaded();
         }
 
         activity.messageCache.saveLastChannelState(guildId, channelId, messages);
@@ -260,6 +276,7 @@ public class MessageListScreen implements Screen {
         }
 
         if (guildId != null) {
+            activity.selfRoleIds(guildId);
             activity.apiClient.fetchRoles(
                     guildId,
                     new ApiClient.Callback<java.util.Map<String, a.b.model.Role>>() {
@@ -336,6 +353,64 @@ public class MessageListScreen implements Screen {
         if (id == null || feed == null || messageList == null || loadingAdapter == null) return;
         int i = feed.indexOf(id);
         if (i >= 0) messageList.scrollToPosition(loadingAdapter.getItemCount() + i);
+    }
+
+    void onSelfRolesLoaded() {
+        if (adapter != null) adapter.notifyDataSetChanged();
+    }
+
+    void onFeedLoaded() {
+        if (focusMessageId == null
+                || focusScrolled
+                || focusFetching
+                || feed == null
+                || messageList == null) return;
+        if (feed.indexOf(focusMessageId) >= 0) {
+            focusScrolled = true;
+            messageList.postDelayed(() -> scrollToMessage(focusMessageId), 80);
+            return;
+        }
+        if (!focusFetchTried) {
+            focusFetchTried = true;
+            fetchFocusMessage();
+        }
+    }
+
+    private void fetchFocusMessage() {
+        if (activity == null || activity.apiClient == null) return;
+        focusFetching = true;
+        activity.apiClient.fetchMessageAround(
+                channelId,
+                focusMessageId,
+                new ApiClient.Callback<Message>() {
+                    @Override
+                    public void onSuccess(Message message) {
+                        focusFetching = false;
+                        if (activity == null || message == null || feed == null || messageList == null)
+                            return;
+                        boolean changed =
+                                feed.merge(
+                                        java.util.Collections.singletonList(message), false);
+                        if (changed) {
+                            messageList.post(
+                                    () -> {
+                                        if (adapter == null || messageList == null) return;
+                                        adapter.submitList(new ArrayList<>(messages));
+                                        messageList.postDelayed(
+                                                () -> {
+                                                    focusScrolled = true;
+                                                    scrollToMessage(focusMessageId);
+                                                },
+                                                80);
+                                    });
+                        }
+                    }
+
+                    @Override
+                    public void onError(String err) {
+                        focusFetching = false;
+                    }
+                });
     }
 
     public void onGatewayEvent(String type, JSONObject d) {
@@ -574,9 +649,11 @@ public class MessageListScreen implements Screen {
     public void onDestroy() {
         if (typing != null) typing.release();
         if (composer != null) composer.release();
+        if (mentionAutocomplete != null) mentionAutocomplete.release();
         activity = null;
         if (adapter != null) adapter.activity = null;
         composer = null;
+        mentionAutocomplete = null;
         feed = null;
         typing = null;
         actions = null;

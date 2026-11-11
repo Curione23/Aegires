@@ -28,9 +28,14 @@ import a.b.util.PermissionUtil;
 import a.b.util.TokenStore;
 import a.b.util.Ui;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -61,6 +66,11 @@ public class MainActivity extends Activity {
     public final ConcurrentHashMap<String, GuildInfo> guildInfoCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, List<String>> userRoleCache = new ConcurrentHashMap<>();
     public final ConcurrentHashMap<String, String> userNickCache = new ConcurrentHashMap<>();
+    public final ConcurrentHashMap<String, List<String>> selfRoleCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<JSONObject>> pendingRoleMentions =
+            new ConcurrentHashMap<>();
+    private final Set<String> selfRolesFetching = new HashSet<>();
+    private final ConcurrentHashMap<String, Long> selfRolesFailedUntil = new ConcurrentHashMap<>();
     public final java.util.concurrent.atomic.AtomicInteger derivationGen =
             new java.util.concurrent.atomic.AtomicInteger(0);
     private boolean firstResume = true;
@@ -169,7 +179,15 @@ public class MainActivity extends Activity {
                                         } catch (Exception ignored) {
                                         }
                                     }
-                                    mentions.onMessageCreate(d, selfId(), currentChannelId());
+                                    String guildId = d.optString("guild_id", null);
+                                    Set<String> roles = selfRoleIds(guildId);
+                                    mentions.onMessageCreate(
+                                            d, selfId(), currentChannelId(), roles);
+                                    if (roles != null && !roles.isEmpty()) {
+                                        replayPendingRoleMentions(guildId, roles);
+                                    } else {
+                                        queuePendingRoleMention(guildId, d);
+                                    }
                                 } else if (d != null && "MESSAGE_UPDATE".equals(type)) {
                                     if (chId != null) {
                                         try {
@@ -212,6 +230,20 @@ public class MainActivity extends Activity {
                                 if (guildId == null || guildId.isEmpty())
                                     guildId = d.optString("id", null);
                                 if (guildId == null || guildId.isEmpty()) return;
+
+                                if ("GUILD_MEMBER_UPDATE".equals(type)) {
+                                    JSONObject user = d.optJSONObject("user");
+                                    if (user != null
+                                            && selfId() != null
+                                            && selfId().equals(user.optString("id", null))) {
+                                        List<String> roles = stringList(d.optJSONArray("roles"));
+                                        selfRoleCache.put(guildId, roles);
+                                        if (apiClient != null)
+                                            apiClient.selfRolesByGuild.put(guildId, roles);
+                                        notifySelfRolesChanged(guildId);
+                                        replayPendingRoleMentions(guildId, new HashSet<>(roles));
+                                    }
+                                }
 
                                 if ("CHANNEL_CREATE".equals(type)
                                         || "CHANNEL_UPDATE".equals(type)
@@ -264,6 +296,124 @@ public class MainActivity extends Activity {
         return selfUserId != null ? selfUserId : userId;
     }
 
+    /**
+     * Roles held by the signed-in user in a guild. Used to detect role mentions locally, the same
+     * way Discord highlights and counts them.
+     */
+    public Set<String> selfRoleIds(final String guildId) {
+        String self = selfId();
+        if (guildId == null || self == null) return Collections.emptySet();
+
+        List<String> cached = selfRoleCache.get(guildId);
+        if (cached != null) return new HashSet<>(cached);
+
+        List<String> fetched = apiClient != null ? apiClient.selfRolesByGuild.get(guildId) : null;
+        if (fetched != null) {
+            selfRoleCache.put(guildId, fetched);
+            return new HashSet<>(fetched);
+        }
+
+        MemberListStore store = memberList;
+        if (store != null && guildId.equals(store.guildId())) {
+            for (int i = 0; i < store.total(); i++) {
+                MemberListStore.Entry e = store.get(i);
+                if (e != null && !e.group && self.equals(e.userId)) {
+                    List<String> roles = new ArrayList<>(e.roles);
+                    selfRoleCache.put(guildId, roles);
+                    return new HashSet<>(roles);
+                }
+            }
+        }
+
+        fetchSelfRoles(guildId, self);
+        return Collections.emptySet();
+    }
+
+    private void fetchSelfRoles(final String guildId, final String self) {
+        if (apiClient == null || !selfRolesFetching.add(guildId)) return;
+        Long failedUntil = selfRolesFailedUntil.get(guildId);
+        if (failedUntil != null && System.currentTimeMillis() < failedUntil) {
+            selfRolesFetching.remove(guildId);
+            return;
+        }
+        apiClient.fetchMember(
+                guildId,
+                self,
+                new ApiClient.Callback<JSONObject>() {
+                    @Override
+                    public void onSuccess(JSONObject member) {
+                        selfRolesFetching.remove(guildId);
+                        selfRolesFailedUntil.remove(guildId);
+                        if (member == null || apiClient == null) return;
+                        List<String> roles = stringList(member.optJSONArray("roles"));
+                        selfRoleCache.put(guildId, roles);
+                        apiClient.selfRolesByGuild.put(guildId, roles);
+                        notifySelfRolesChanged(guildId);
+                        replayPendingRoleMentions(guildId, new HashSet<>(roles));
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        selfRolesFetching.remove(guildId);
+                        selfRolesFailedUntil.put(
+                                guildId, System.currentTimeMillis() + 30_000L);
+                    }
+                });
+    }
+
+    /** Re-binds visible message rows so role mentions highlight as soon as roles arrive. */
+    private void notifySelfRolesChanged(String guildId) {
+        if (guildId == null) return;
+        for (Screen screen : screenStack) {
+            if (screen instanceof MessageListScreen
+                    && guildId.equals(((MessageListScreen) screen).guildId)) {
+                ((MessageListScreen) screen).onSelfRolesLoaded();
+            }
+        }
+    }
+
+    /**
+     * Role mentions can arrive before we know the signed-in user's roles (for example in a guild
+     * that has not been opened). Keep a few events around and evaluate them once roles arrive.
+     */
+    private void queuePendingRoleMention(String guildId, JSONObject event) {
+        if (guildId == null
+                || guildId.isEmpty()
+                || event == null
+                || selfRoleCache.containsKey(guildId)
+                || (apiClient != null && apiClient.selfRolesByGuild.containsKey(guildId)))
+            return;
+        JSONArray roles = event.optJSONArray("mention_roles");
+        if (roles == null || roles.length() == 0) return;
+        List<JSONObject> pending = pendingRoleMentions.get(guildId);
+        if (pending == null) {
+            pending = new ArrayList<>();
+            pendingRoleMentions.put(guildId, pending);
+        }
+        if (pending.size() < 50) pending.add(event);
+    }
+
+    private void replayPendingRoleMentions(String guildId, Set<String> roles) {
+        if (guildId == null) return;
+        List<JSONObject> pending = pendingRoleMentions.remove(guildId);
+        if (pending == null || pending.isEmpty() || roles == null || roles.isEmpty()) return;
+        String self = selfId();
+        String viewing = currentChannelId();
+        for (JSONObject event : pending) {
+            if (event != null) mentions.onMessageCreate(event, self, viewing, roles);
+        }
+    }
+
+    private static List<String> stringList(JSONArray arr) {
+        List<String> out = new ArrayList<>();
+        if (arr == null) return out;
+        for (int i = 0; i < arr.length(); i++) {
+            String value = arr.optString(i, null);
+            if (value != null && !value.isEmpty()) out.add(value);
+        }
+        return out;
+    }
+
     public String currentChannelId() {
         if (!screenStack.isEmpty() && screenStack.peek() instanceof MessageListScreen) {
             return ((MessageListScreen) screenStack.peek()).getChannelId();
@@ -310,6 +460,10 @@ public class MainActivity extends Activity {
         channelNameCache.clear();
         roleCache.clear();
         userNickCache.clear();
+        selfRoleCache.clear();
+        pendingRoleMentions.clear();
+        selfRolesFetching.clear();
+        selfRolesFailedUntil.clear();
         mentions.clear();
         memberList.clear();
         diskCache.clearAll();

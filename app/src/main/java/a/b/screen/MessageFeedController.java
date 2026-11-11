@@ -96,8 +96,11 @@ final class MessageFeedController {
                                     () -> {
                                         adapter.submitList(new ArrayList<>(messages));
                                         if (stick) host.scrollToBottom();
+                                        host.onFeedLoaded();
                                     });
                             fetchMissingRoles();
+                        } else {
+                            host.onFeedLoaded();
                         }
                         if (changed && after != null && batch.size() >= PAGE_SIZE)
                             loadNewMessages();

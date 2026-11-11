@@ -25,6 +25,9 @@ public class Message {
     public boolean replyToMissing;
     public List<String> mentionedUserIds = new ArrayList<String>();
     public Map<String, String> mentionedUsers = new HashMap<String, String>();
+    public List<String> mentionedRoleIds = new ArrayList<>();
+    public boolean mentionEveryone;
+    public boolean mentionHere;
     public List<Attachment> attachments = new ArrayList<Attachment>();
     public List<Embed> embeds = new ArrayList<Embed>();
     public List<String> roleIds = new ArrayList<>();
@@ -54,6 +57,7 @@ public class Message {
             }
         }
         parseMentions(m, msg);
+        parseMentionRoles(m, msg);
         parseAttachments(m, msg);
         parseEmbeds(m, msg);
         parseReference(m, msg);
@@ -82,6 +86,22 @@ public class Message {
             }
             msg.mentionedUserIds.add(id);
             msg.mentionedUsers.put(id, display);
+        }
+    }
+
+    private static void parseMentionRoles(JSONObject m, Message msg) {
+        msg.mentionEveryone = m.optBoolean("mention_everyone", false);
+        msg.mentionHere =
+                msg.mentionEveryone
+                        && msg.content != null
+                        && msg.content.contains("@here")
+                        && !msg.content.contains("@everyone");
+        JSONArray arr = m.optJSONArray("mention_roles");
+        if (arr == null) return;
+        for (int i = 0; i < arr.length(); i++) {
+            String id = arr.optString(i, null);
+            if (id != null && !id.isEmpty() && !msg.mentionedRoleIds.contains(id))
+                msg.mentionedRoleIds.add(id);
         }
     }
 
@@ -202,6 +222,16 @@ public class Message {
         if (other.mentionedUsers != null && !other.mentionedUsers.isEmpty()) {
             this.mentionedUsers.putAll(other.mentionedUsers);
         }
+        if (other.mentionedUserIds != null && !other.mentionedUserIds.isEmpty()) {
+            for (String id : other.mentionedUserIds)
+                if (!this.mentionedUserIds.contains(id)) this.mentionedUserIds.add(id);
+        }
+        if (other.mentionedRoleIds != null && !other.mentionedRoleIds.isEmpty()) {
+            for (String id : other.mentionedRoleIds)
+                if (!this.mentionedRoleIds.contains(id)) this.mentionedRoleIds.add(id);
+        }
+        if (other.mentionEveryone) this.mentionEveryone = true;
+        if (other.mentionHere) this.mentionHere = true;
         if (other.replyToMessageId != null) this.replyToMessageId = other.replyToMessageId;
         if (other.replyToAuthorName != null) this.replyToAuthorName = other.replyToAuthorName;
         if (other.replyToContent != null) this.replyToContent = other.replyToContent;

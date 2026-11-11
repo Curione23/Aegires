@@ -25,6 +25,7 @@ import java.util.Objects;
 public class MessageAdapter extends RecyclerView.Adapter<MessageViewHolder> {
     static final int MATCH = -1, WRAP = -2;
     static final int MENTION_FG = 0xFFC9CDFB, MENTION_BG = 0x4D5865F2;
+    static final int MENTION_ROW_BG = 0x1FF0B232;
     static final int EVERYONE_FG = 0xFFFEE75C, EVERYONE_BG = 0x4DFEE75C;
     static final int EMBED_BG = 0xFF2B2D31;
     static final int TEXT = 0xFFDBDEE1, MUTED = 0xFF949BA4, LINK_FG = 0xFF00A8FC;

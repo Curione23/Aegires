@@ -45,6 +45,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ApiClient {
     private static final String TAG = "ApiClient";
@@ -61,6 +62,7 @@ public class ApiClient {
     private final AtomicInteger requestGeneration = new AtomicInteger();
     public final Map<String, Boolean> manageMessagesCache =
             new java.util.concurrent.ConcurrentHashMap<>();
+    public final Map<String, List<String>> selfRolesByGuild = new ConcurrentHashMap<>();
 
     private final ThreadPoolExecutor executor =
             new ThreadPoolExecutor(
@@ -515,6 +517,19 @@ public class ApiClient {
                 cb);
     }
 
+    public void searchGuildMembers(
+            String guildId, String query, int limit, Callback<List<JSONObject>> cb) {
+        get(
+                "/guilds/"
+                        + enc(guildId)
+                        + "/members/search?query="
+                        + enc(query)
+                        + "&limit="
+                        + limit,
+                json -> list(json, o -> o, "searchGuildMembers"),
+                cb);
+    }
+
     public void fetchUserProfile(String id, Callback<DiscordUser> cb) {
         get("/users/" + enc(id), json -> DiscordUser.fromJson(new JSONObject(json)), cb);
     }
@@ -606,6 +621,7 @@ public class ApiClient {
             JSONArray arr = new JSONObject(request("GET", path, null)).optJSONArray("roles");
             List<String> roles = new ArrayList<>();
             for (int i = 0; arr != null && i < arr.length(); i++) roles.add(arr.optString(i));
+            selfRolesByGuild.put(guildId, roles);
             return roles;
         } catch (Exception e) {
             throw new IOException("Failed to fetch member: " + e.getMessage(), e);

@@ -145,5 +145,6 @@ public class GuildRailView extends LinearLayout implements MentionStore.Listener
         if (activity == null) return;
         if (dmBadge != null) Ui.setBadge(dmBadge, activity.mentions.dmUnreadTotal());
         if (notifBadge != null) Ui.setBadge(notifBadge, activity.mentions.unreadCount());
+        if (adapter != null && list != null) list.post(adapter::notifyDataSetChanged);
     }
 }

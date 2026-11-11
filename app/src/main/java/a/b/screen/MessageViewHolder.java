@@ -130,7 +130,7 @@ public final class MessageViewHolder extends RecyclerView.ViewHolder
         boolean showHeader =
                 pos == 0 || !MessageAdapter.sameGroup(adapter.displayList.get(pos - 1), msg);
         adapter.bindHeader(this, msg, showHeader);
-        root.setBackgroundColor(adapter.mentionsSelf(msg) ? 0xFF3A3A33 : BG);
+        root.setBackgroundColor(adapter.mentionsSelf(msg) ? MessageAdapter.MENTION_ROW_BG : BG);
 
         CharSequence text;
         if (msg.encrypted && adapter.key() == null) {

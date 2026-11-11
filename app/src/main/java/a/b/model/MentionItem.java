@@ -3,6 +3,9 @@ package a.b.model;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** One entry of the mentions / notifications inbox. */
 public class MentionItem {
     public String id, channelId, guildId;
@@ -10,8 +13,10 @@ public class MentionItem {
     public String content;
     public long timestamp;
     public boolean everyone;
+    public boolean here;
     public boolean unread;
     public boolean guildResolved;
+    public final List<String> roleIds = new ArrayList<>();
 
     public static MentionItem fromJson(JSONObject o) throws Exception {
         MentionItem m = new MentionItem();
@@ -23,6 +28,16 @@ public class MentionItem {
         }
         m.content = o.isNull("content") ? "" : o.optString("content", "");
         m.everyone = o.optBoolean("mention_everyone", false);
+        m.here =
+                m.everyone
+                        && m.content != null
+                        && m.content.contains("@here")
+                        && !m.content.contains("@everyone");
+        JSONArray roles = o.optJSONArray("mention_roles");
+        for (int i = 0; roles != null && i < roles.length(); i++) {
+            String id = roles.optString(i, null);
+            if (id != null && !id.isEmpty() && !m.roleIds.contains(id)) m.roleIds.add(id);
+        }
         JSONObject a = o.optJSONObject("author");
         if (a != null) {
             m.authorId = a.optString("id", null);

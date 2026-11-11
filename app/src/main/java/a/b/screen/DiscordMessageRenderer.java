@@ -171,18 +171,30 @@ final class DiscordMessageRenderer {
                 sb,
                 CHANNEL_MENTION,
                 m -> "#" + adapter.mentionRegistry.resolveChannel(m.group(1)),
-                chip);
+                (b, s, e, m) -> {
+                    chip.apply(b, s, e, m);
+                    span(b, s, e, new Click(() -> openChannel(m.group(1))));
+                });
         sub(
                 sb,
                 ROLE_MENTION,
                 m -> {
-                    Role role =
-                            adapter.activity != null && adapter.activity.roleCache != null
-                                    ? adapter.activity.roleCache.get(m.group(1))
-                                    : null;
+                    Role role = role(m.group(1));
                     return "@" + (role != null && isReal(role.name) ? role.name : "role");
                 },
-                chip);
+                (b, s, e, m) -> {
+                    Role role = role(m.group(1));
+                    int color =
+                            role != null && role.color != 0
+                                    ? role.color | 0xFF000000
+                                    : MessageAdapter.MENTION_FG;
+                    span(
+                            b,
+                            s,
+                            e,
+                            new ForegroundColorSpan(color),
+                            new BackgroundColorSpan(withAlpha(color, 0x33)));
+                });
         sub(
                 sb,
                 USER_MENTION,
@@ -226,6 +238,21 @@ final class DiscordMessageRenderer {
     private void openProfile(String uid) {
         if (uid != null && adapter.activity != null)
             adapter.activity.navigate(new ProfileScreen(uid, adapter.guildId));
+    }
+
+    private void openChannel(String channelId) {
+        if (channelId == null || adapter.activity == null) return;
+        adapter.activity.navigate(new MessageListScreen(adapter.guildId, channelId));
+    }
+
+    private Role role(String id) {
+        return adapter.activity != null && adapter.activity.roleCache != null
+                ? adapter.activity.roleCache.get(id)
+                : null;
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
     }
 
     private static Long timestampMillis(String seconds) {

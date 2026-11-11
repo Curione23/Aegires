@@ -69,6 +69,7 @@ final class GuildRailAdapter extends RecyclerView.Adapter<GuildRailAdapter.Holde
         final ImageView icon;
         final TextView initial;
         final View indicator;
+        final TextView badge;
 
         Holder(Context c) {
             super(new FrameLayout(c));
@@ -100,6 +101,12 @@ final class GuildRailAdapter extends RecyclerView.Adapter<GuildRailAdapter.Holde
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
             wrap.addView(icon, new FrameLayout.LayoutParams(-1, -1));
 
+            badge = Ui.badge(c);
+            FrameLayout.LayoutParams blp =
+                    new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
+            blp.setMargins(0, 0, Ui.dp(c, 8), Ui.dp(c, 6));
+            root.addView(badge, blp);
+
             itemView.setOnClickListener(
                     v -> {
                         if (listener != null)
@@ -121,6 +128,9 @@ final class GuildRailAdapter extends RecyclerView.Adapter<GuildRailAdapter.Holde
 
             initial.setText(initialOf(g.name));
             initial.setVisibility(hasIcon ? View.GONE : View.VISIBLE);
+
+            int mentions = activity != null ? activity.mentions.unreadForGuild(g.id) : 0;
+            Ui.setBadge(badge, mentions);
 
             if (activity != null && activity.imageLoader != null) {
                 if (hasIcon) {

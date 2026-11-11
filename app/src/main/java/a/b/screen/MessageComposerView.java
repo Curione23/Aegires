@@ -91,6 +91,7 @@ final class MessageComposerView {
                         updateSendState();
                     }
                 });
+        if (host.mentionAutocomplete() != null) host.mentionAutocomplete().attach(input);
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(0, WRAP, 1f);
         inputLp.setMargins(dp(4), 0, dp(4), 0);
         row.addView(input, inputLp);
