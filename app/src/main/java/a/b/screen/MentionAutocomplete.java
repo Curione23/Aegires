@@ -48,15 +48,22 @@ final class MentionAutocomplete {
     private static final int MAX_RESULTS = 8;
     private static final int MAX_VISIBLE_ROWS = 7;
     private static final int ROW_HEIGHT_DP = 48;
-    private static final int REMOTE_LIMIT = 100;
+    private static final int REMOTE_LIMIT = 1000;
     private static final long REMOTE_DELAY_MS = 180;
     private static final long REMOTE_CACHE_TTL_MS = 5 * 60_000L;
     private static final long EMPTY_CACHE_TTL_MS = 15_000L;
 
+    private static final int DEEP_PAGE_SIZE = 1000;
+    private static final int DEEP_MAX_PAGES = 30;
+    private static final long DEEP_PAGE_DELAY_MS = 250;
+    private static final long DEEP_RETRY_MS = 10_000L;
+    private static final int DEEP_MIN_QUERY = 2;
+
     private static final class Suggestion {
         final int kind;
         final String id, name;
-        String username, avatar, search;
+        final String nameLower;
+        String username, avatar, search, searchLower;
         int color, position, remoteRank;
         boolean fromRemote;
 
@@ -64,7 +71,25 @@ final class MentionAutocomplete {
             this.kind = kind;
             this.id = id;
             this.name = name;
-            this.search = name;
+            this.nameLower = name.toLowerCase(Locale.ROOT);
+            setSearch(name);
+        }
+
+        void setSearch(String value) {
+            search = value;
+            searchLower = value == null ? null : value.toLowerCase(Locale.ROOT);
+        }
+
+        Suggestion copy() {
+            Suggestion s = new Suggestion(kind, id, name);
+            s.username = username;
+            s.avatar = avatar;
+            s.setSearch(search);
+            s.color = color;
+            s.position = position;
+            s.remoteRank = remoteRank;
+            s.fromRemote = fromRemote;
+            return s;
         }
     }
 
@@ -73,7 +98,15 @@ final class MentionAutocomplete {
     private final Map<String, List<Suggestion>> remoteCache = new HashMap<>();
     private final Map<String, Long> remoteFetchedAt = new HashMap<>();
     private final Set<String> pendingSearches = new HashSet<>();
+    private final Map<String, LinkedHashMap<String, Suggestion>> deepMembers = new HashMap<>();
+    private final Set<String> deepLoading = new HashSet<>();
+    private final Set<String> deepComplete = new HashSet<>();
+    private final Map<String, String> deepAfter = new HashMap<>();
+    private final Map<String, Integer> deepPages = new HashMap<>();
+    private final Map<String, Long> deepFailedUntil = new HashMap<>();
+    private final Map<String, Integer> deepFailures = new HashMap<>();
     private final Runnable searchRunnable = this::runRemoteSearch;
+    private final Runnable deepPageRunnable = this::maybeLoadDeepMembers;
     private final Runnable blurHide =
             () -> {
                 if (this.input == null || !this.input.hasFocus()) hide();
@@ -150,6 +183,13 @@ final class MentionAutocomplete {
         remoteCache.clear();
         remoteFetchedAt.clear();
         pendingSearches.clear();
+        deepMembers.clear();
+        deepLoading.clear();
+        deepComplete.clear();
+        deepAfter.clear();
+        deepPages.clear();
+        deepFailedUntil.clear();
+        deepFailures.clear();
         active = false;
     }
 
@@ -220,6 +260,7 @@ final class MentionAutocomplete {
         remote = cached == null ? new ArrayList<>() : cached;
         render();
         scheduleRemote(key);
+        maybeLoadDeepMembers();
     }
 
     private String currentKey() {
@@ -284,7 +325,7 @@ final class MentionAutocomplete {
                         }
                         remoteCache.put(key, parsed);
                         remoteFetchedAt.put(key, System.currentTimeMillis());
-                        if (remoteCache.size() > 200) {
+                        if (remoteCache.size() > 20) {
                             remoteCache.clear();
                             remoteFetchedAt.clear();
                             remoteFetchedAt.put(key, System.currentTimeMillis());
@@ -301,6 +342,112 @@ final class MentionAutocomplete {
                         pendingSearches.remove(key);
                         remoteCache.remove(key);
                         remoteFetchedAt.remove(key);
+                    }
+                });
+    }
+
+    /**
+     * Discord's member-search endpoint only covers a limited result window. Keep paging through
+     * the guild member list in the background so a member can still be found by a later part of
+     * their name in a large server.
+     */
+    private void maybeLoadDeepMembers() {
+        if (!active
+                || sigil != '@'
+                || host.guildId == null
+                || query.length() < DEEP_MIN_QUERY
+                || host.activity == null
+                || host.activity.apiClient == null
+                || host.activity.apiClient.isBotAccount())
+            return;
+        final String guild = host.guildId;
+        if (deepComplete.contains(guild) || deepLoading.contains(guild)) return;
+        Integer failures = deepFailures.get(guild);
+        if (failures != null && failures >= 3) {
+            deepComplete.add(guild);
+            return;
+        }
+        Long failedAt = deepFailedUntil.get(guild);
+        if (failedAt != null && System.currentTimeMillis() < failedAt) return;
+        int pages = deepPages.getOrDefault(guild, 0);
+        if (pages >= DEEP_MAX_PAGES) {
+            deepComplete.add(guild);
+            return;
+        }
+        deepLoading.add(guild);
+        loadDeepMembersPage(guild);
+    }
+
+    private void loadDeepMembersPage(final String guild) {
+        if (!active) {
+            deepLoading.remove(guild);
+            return;
+        }
+        final String after = deepAfter.get(guild);
+        host.activity.apiClient.fetchGuildMembersPage(
+                guild,
+                after,
+                DEEP_PAGE_SIZE,
+                new ApiClient.Callback<List<JSONObject>>() {
+                    @Override
+                    public void onSuccess(List<JSONObject> result) {
+                        deepLoading.remove(guild);
+                        if (!active || host.activity == null) return;
+                        deepFailedUntil.remove(guild);
+                        deepFailures.remove(guild);
+                        LinkedHashMap<String, Suggestion> index = deepMembers.get(guild);
+                        if (index == null) {
+                            index = new LinkedHashMap<>();
+                            deepMembers.put(guild, index);
+                        }
+                        int added = 0;
+                        String lastId = null;
+                        if (result != null) {
+                            for (JSONObject member : result) {
+                                Suggestion s = memberSuggestion(member);
+                                if (s == null) continue;
+                                s.fromRemote = false;
+                                s.remoteRank = 0;
+                                lastId = s.id;
+                                Suggestion existing = index.get(s.id);
+                                if (existing == null) {
+                                    index.put(s.id, s);
+                                    added++;
+                                } else {
+                                    if (!Ui.isReal(existing.avatar) && Ui.isReal(s.avatar))
+                                        existing.avatar = s.avatar;
+                                    if (!Ui.isReal(existing.username) && Ui.isReal(s.username)) {
+                                        existing.username = s.username;
+                                        existing.setSearch(existing.name + " " + s.username);
+                                    }
+                                }
+                            }
+                        }
+                        int pages = deepPages.getOrDefault(guild, 0) + 1;
+                        deepPages.put(guild, pages);
+                        boolean empty = result == null || result.isEmpty();
+                        boolean noProgress = lastId == null || (after != null && after.equals(lastId));
+                        if (!empty && !noProgress) deepAfter.put(guild, lastId);
+                        if (empty || noProgress) deepComplete.add(guild);
+                        if (pages >= DEEP_MAX_PAGES) deepComplete.add(guild);
+                        if (added > 0) render();
+                        if (!deepComplete.contains(guild) && active) {
+                            ui.removeCallbacks(deepPageRunnable);
+                            ui.postDelayed(deepPageRunnable, DEEP_PAGE_DELAY_MS);
+                        }
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        deepLoading.remove(guild);
+                        int failures = deepFailures.getOrDefault(guild, 0) + 1;
+                        deepFailures.put(guild, failures);
+                        deepFailedUntil.put(
+                                guild, System.currentTimeMillis() + DEEP_RETRY_MS);
+                        if (active && failures < 3) {
+                            ui.removeCallbacks(deepPageRunnable);
+                            ui.postDelayed(deepPageRunnable, DEEP_RETRY_MS);
+                        }
                     }
                 });
     }
@@ -337,7 +484,7 @@ final class MentionAutocomplete {
                     if (ch.type == 4) continue;
                     Suggestion s = new Suggestion(KIND_CHANNEL, ch.id, ch.name);
                     s.color = Ui.BG_INPUT;
-                    s.search = ch.name;
+                    s.setSearch(ch.name);
                     if (matches(s, q)) channels.add(s);
                 }
             }
@@ -347,6 +494,26 @@ final class MentionAutocomplete {
 
         LinkedHashMap<String, Suggestion> users = new LinkedHashMap<>();
         collectLocalUsers(users);
+        if (host.guildId != null) {
+            Map<String, Suggestion> indexed = deepMembers.get(host.guildId);
+            if (indexed != null) {
+                for (Suggestion s : indexed.values()) {
+                    if (!matches(s, q)) continue;
+                    Suggestion candidate = s.copy();
+                    Suggestion existing = users.get(s.id);
+                    if (existing == null) {
+                        users.put(s.id, candidate);
+                    } else {
+                        if (!Ui.isReal(existing.avatar) && Ui.isReal(candidate.avatar))
+                            existing.avatar = candidate.avatar;
+                        if (!Ui.isReal(existing.username) && Ui.isReal(candidate.username)) {
+                            existing.username = candidate.username;
+                            existing.setSearch(existing.name + " " + candidate.username);
+                        }
+                    }
+                }
+            }
+        }
         for (Suggestion s : remote) {
             Suggestion existing = users.get(s.id);
             if (existing == null) {
@@ -356,7 +523,10 @@ final class MentionAutocomplete {
             existing.fromRemote = true;
             existing.remoteRank = s.remoteRank;
             if (!Ui.isReal(existing.avatar) && Ui.isReal(s.avatar)) existing.avatar = s.avatar;
-            if (!Ui.isReal(existing.username) && Ui.isReal(s.username)) existing.username = s.username;
+            if (!Ui.isReal(existing.username) && Ui.isReal(s.username)) {
+                existing.username = s.username;
+                existing.setSearch(existing.name + " " + s.username);
+            }
         }
         List<Suggestion> userList = new ArrayList<>(users.values());
         // Remote results already came from Discord's member search, whose matching rules can be
@@ -375,7 +545,7 @@ final class MentionAutocomplete {
                     Suggestion s = new Suggestion(KIND_ROLE, role.id, role.name);
                     s.color = role.color != 0 ? role.color | 0xFF000000 : Ui.BLURPLE;
                     s.position = role.position;
-                    s.search = role.name;
+                    s.setSearch(role.name);
                     if (matches(s, q)) roles.add(s);
                 }
             }
@@ -425,7 +595,7 @@ final class MentionAutocomplete {
             Suggestion s = e.getValue();
             if (s.username == null) {
                 s.username = host.activity.userNameCache.get(s.id);
-                if (s.username != null) s.search = s.name + " " + s.username;
+                if (s.username != null) s.setSearch(s.name + " " + s.username);
             }
         }
     }
@@ -438,19 +608,22 @@ final class MentionAutocomplete {
             Suggestion s = new Suggestion(KIND_USER, id, name);
             s.username = username;
             s.avatar = avatar;
-            s.search = name + (Ui.isReal(username) ? " " + username : "");
+            s.setSearch(name + (Ui.isReal(username) ? " " + username : ""));
             out.put(id, s);
             return;
         }
         if (!Ui.isReal(existing.avatar) && Ui.isReal(avatar)) existing.avatar = avatar;
-        if (!Ui.isReal(existing.username) && Ui.isReal(username)) existing.username = username;
+        if (!Ui.isReal(existing.username) && Ui.isReal(username)) {
+            existing.username = username;
+            existing.setSearch(existing.name + " " + username);
+        }
     }
 
     private static void addSpecial(
             List<Suggestion> out, String q, String id, String subtitle, String search) {
         Suggestion s = new Suggestion(KIND_SPECIAL, id, id);
         s.color = Ui.YELLOW;
-        s.search = search;
+        s.setSearch(search);
         s.username = subtitle;
         if (matches(s, q)) out.add(s);
     }
@@ -468,15 +641,15 @@ final class MentionAutocomplete {
         Suggestion s = new Suggestion(KIND_USER, id, name);
         s.username = username;
         s.avatar = u.isNull("avatar") ? null : u.optString("avatar", null);
-        s.search = name + (Ui.isReal(username) ? " " + username : "");
+        s.setSearch(name + (Ui.isReal(username) ? " " + username : ""));
         s.fromRemote = true;
         return s;
     }
 
     private static boolean matches(Suggestion s, String q) {
         if (q.isEmpty()) return true;
-        String hay = s.search == null ? s.name : s.search;
-        return hay.toLowerCase(Locale.ROOT).contains(q);
+        if (s.nameLower.contains(q)) return true;
+        return s.searchLower != null && s.searchLower.contains(q);
     }
 
     private static List<Suggestion> limit(List<Suggestion> list) {
@@ -507,11 +680,10 @@ final class MentionAutocomplete {
 
     private static int matchScore(Suggestion s, String q) {
         if (q.isEmpty()) return 0;
-        String name = s.name.toLowerCase(Locale.ROOT);
-        if (name.equals(q)) return -1;
-        if (name.startsWith(q)) return 0;
-        if (name.contains(q)) return 1;
-        String search = s.search == null ? "" : s.search.toLowerCase(Locale.ROOT);
+        if (s.nameLower.equals(q)) return -1;
+        if (s.nameLower.startsWith(q)) return 0;
+        if (s.nameLower.contains(q)) return 1;
+        String search = s.searchLower == null ? "" : s.searchLower;
         if (search.equals(q)) return -1;
         return search.contains(q) ? 2 : 3;
     }

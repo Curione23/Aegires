@@ -530,6 +530,13 @@ public class ApiClient {
                 cb);
     }
 
+    public void fetchGuildMembersPage(
+            String guildId, String after, int limit, Callback<List<JSONObject>> cb) {
+        String path = "/guilds/" + enc(guildId) + "/members?limit=" + limit;
+        if (after != null && !after.isEmpty()) path += "&after=" + enc(after);
+        get(path, json -> list(json, o -> o, "fetchGuildMembersPage"), cb);
+    }
+
     public void fetchUserProfile(String id, Callback<DiscordUser> cb) {
         get("/users/" + enc(id), json -> DiscordUser.fromJson(new JSONObject(json)), cb);
     }
