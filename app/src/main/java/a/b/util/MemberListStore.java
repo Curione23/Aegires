@@ -37,6 +37,7 @@ public final class MemberListStore {
     private final java.util.HashMap<String, Integer> groupCounts = new java.util.HashMap<>();
     private String guildId, listId;
     private int memberCount, onlineCount, listSize;
+    private int offlineStart = -1;
 
     public void addListener(Listener l) {
         if (!listeners.contains(l)) listeners.add(l);
@@ -75,6 +76,11 @@ public final class MemberListStore {
         return listSize > 0 ? listSize : items.size();
     }
 
+    /** Index of the first entry in the offline group, or -1 when the group isn't known yet. */
+    public int offlineStart() {
+        return offlineStart;
+    }
+
     /** Number of member/group entries currently loaded into the window, not the whole guild. */
     public int loadedCount() {
         return items.size();
@@ -85,6 +91,7 @@ public final class MemberListStore {
         guildId = listId = null;
         groupCounts.clear();
         memberCount = onlineCount = listSize = 0;
+        offlineStart = -1;
         fire();
     }
 
@@ -97,6 +104,7 @@ public final class MemberListStore {
             groupCounts.clear();
             guildId = g;
             listId = id;
+            offlineStart = -1;
         }
         memberCount = d.optInt("member_count", memberCount);
         onlineCount = d.optInt("online_count", onlineCount);
@@ -104,12 +112,19 @@ public final class MemberListStore {
         if (groups != null) {
             int sum = groups.length();
             groupCounts.clear();
+            offlineStart = -1;
+            int index = 0;
             for (int i = 0; i < groups.length(); i++) {
                 JSONObject gr = groups.optJSONObject(i);
                 if (gr == null) continue;
+                String groupId = gr.optString("id", "");
                 int c = gr.optInt("count", 0);
-                groupCounts.put(gr.optString("id", ""), c);
+                groupCounts.put(groupId, c);
                 sum += c;
+                index++; // group header
+                int memberStart = index;
+                index += c;
+                if ("offline".equalsIgnoreCase(groupId)) offlineStart = memberStart;
             }
             listSize = sum;
         }

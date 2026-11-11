@@ -243,6 +243,39 @@ public class GatewayClient extends WebSocketListener {
         return true;
     }
 
+    /**
+     * Requests a contiguous batch of 100-member list blocks. The member list contains online and
+     * offline groups, so this can be used to populate offline members for local searches.
+     */
+    public boolean requestMemberBlockRanges(
+            String guildId, String channelId, int firstBlock, int lastBlock) {
+        if (!ready
+                || guildId == null
+                || channelId == null
+                || firstBlock < 0
+                || lastBlock < firstBlock)
+            return false;
+        JSONArray ranges = new JSONArray();
+        for (int block = firstBlock; block <= lastBlock; block++) {
+            int start = block * 100;
+            ranges.put(new JSONArray().put(start).put(start + 99));
+        }
+        send(
+                OP_GUILD_SUBSCRIBE,
+                obj(
+                        "guild_id",
+                        guildId,
+                        "typing",
+                        true,
+                        "activities",
+                        true,
+                        "threads",
+                        true,
+                        "members",
+                        obj(channelId, ranges)));
+        return true;
+    }
+
     public void resetSubscriptionCache() {
         subscribedGuild = null;
         subscribedChannel = null;

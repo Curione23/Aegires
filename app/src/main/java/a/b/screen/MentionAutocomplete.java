@@ -59,6 +59,12 @@ final class MentionAutocomplete {
     private static final long DEEP_RETRY_MS = 10_000L;
     private static final int DEEP_MIN_QUERY = 2;
 
+    private static final int MEMBER_BLOCK_SIZE = 100;
+    private static final int MEMBER_PREFETCH_BATCH = 10;
+    private static final int MEMBER_PREFETCH_MAX_BLOCKS = 300;
+    private static final long MEMBER_PREFETCH_DELAY_MS = 500L;
+    private static final int MEMBER_MIN_QUERY = 2;
+
     private static final class Suggestion {
         final int kind;
         final String id, name;
@@ -105,8 +111,27 @@ final class MentionAutocomplete {
     private final Map<String, Integer> deepPages = new HashMap<>();
     private final Map<String, Long> deepFailedUntil = new HashMap<>();
     private final Map<String, Integer> deepFailures = new HashMap<>();
+    private final Map<String, Integer> memberNextBlock = new HashMap<>();
+    private final Map<String, Integer> memberRequestedBlocks = new HashMap<>();
     private final Runnable searchRunnable = this::runRemoteSearch;
     private final Runnable deepPageRunnable = this::maybeLoadDeepMembers;
+    private final Runnable memberPrefetchRunnable = this::maybePrefetchMembers;
+    private final Runnable memberRenderRunnable =
+            () -> {
+                if (active) render();
+            };
+    private final MemberListStore.Listener memberListListener =
+            new MemberListStore.Listener() {
+                @Override
+                public void onMemberListChanged() {
+                    scheduleMemberRender();
+                }
+
+                @Override
+                public void onMemberListRangeChanged(int positionStart, int itemCount) {
+                    scheduleMemberRender();
+                }
+            };
     private final Runnable blurHide =
             () -> {
                 if (this.input == null || !this.input.hasFocus()) hide();
@@ -115,6 +140,7 @@ final class MentionAutocomplete {
     private ScrollView panel;
     private LinearLayout rows;
     private EditText input;
+    private MemberListStore memberListStore;
     private char sigil;
     private int tokenStart = -1;
     private String query = "";
@@ -153,6 +179,9 @@ final class MentionAutocomplete {
 
     void attach(EditText editor) {
         input = editor;
+        if (memberListStore != null) memberListStore.removeListener(memberListListener);
+        memberListStore = host.activity == null ? null : host.activity.memberList;
+        if (memberListStore != null) memberListStore.addListener(memberListListener);
         editor.addTextChangedListener(
                 new TextWatcher() {
                     @Override
@@ -177,6 +206,8 @@ final class MentionAutocomplete {
 
     void release() {
         ui.removeCallbacksAndMessages(null);
+        if (memberListStore != null) memberListStore.removeListener(memberListListener);
+        memberListStore = null;
         input = null;
         panel = null;
         rows = null;
@@ -190,12 +221,16 @@ final class MentionAutocomplete {
         deepPages.clear();
         deepFailedUntil.clear();
         deepFailures.clear();
+        memberNextBlock.clear();
+        memberRequestedBlocks.clear();
         active = false;
     }
 
     void hide() {
         ui.removeCallbacks(searchRunnable);
         ui.removeCallbacks(blurHide);
+        ui.removeCallbacks(memberPrefetchRunnable);
+        ui.removeCallbacks(memberRenderRunnable);
         if (panel != null) panel.setVisibility(View.GONE);
         active = false;
         tokenStart = -1;
@@ -260,6 +295,7 @@ final class MentionAutocomplete {
         remote = cached == null ? new ArrayList<>() : cached;
         render();
         scheduleRemote(key);
+        maybePrefetchMembers();
         maybeLoadDeepMembers();
     }
 
@@ -360,6 +396,9 @@ final class MentionAutocomplete {
                 || host.activity.apiClient == null
                 || host.activity.apiClient.isBotAccount())
             return;
+        // When the gateway is available, use its member-list ranges instead. That source includes
+        // offline members and feeds the same cache used by the member list.
+        if (host.activity.gateway != null) return;
         final String guild = host.guildId;
         if (deepComplete.contains(guild) || deepLoading.contains(guild)) return;
         Integer failures = deepFailures.get(guild);
@@ -450,6 +489,106 @@ final class MentionAutocomplete {
                         }
                     }
                 });
+    }
+
+    private void scheduleMemberRender() {
+        if (!active) return;
+        ui.removeCallbacks(memberRenderRunnable);
+        ui.postDelayed(memberRenderRunnable, 120);
+    }
+
+    /**
+     * The guild member list is lazy: the initial subscription usually only has the online section.
+     * Request the remaining 100-member blocks while @-autocomplete is open so offline members are
+     * available to local matching too.
+     */
+    private void maybePrefetchMembers() {
+        if (!active
+                || sigil != '@'
+                || host.guildId == null
+                || host.channelId == null
+                || query.length() < MEMBER_MIN_QUERY
+                || host.activity == null
+                || host.activity.gateway == null)
+            return;
+        if (host.activity.apiClient != null && host.activity.apiClient.isBotAccount()) return;
+        final String guild = host.guildId;
+        MemberListStore store = host.activity.memberList;
+        if (store == null) return;
+        String loadedGuild = store.guildId();
+        if (loadedGuild != null && !guild.equals(loadedGuild)) {
+            scheduleMemberPrefetch(MEMBER_PREFETCH_DELAY_MS);
+            return;
+        }
+
+        Integer cursor = memberNextBlock.get(guild);
+        int total = store.total();
+        if (total <= 0) {
+            // The first range also tells us how large this guild's member list is.
+            if (cursor == null || cursor != -1) {
+                if (host.activity.gateway.requestMemberBlockRanges(
+                        guild, host.channelId, 0, 0)) {
+                    memberNextBlock.put(guild, -1);
+                    memberRequestedBlocks.remove(guild);
+                } else {
+                    memberNextBlock.remove(guild);
+                }
+            }
+            scheduleMemberPrefetch(MEMBER_PREFETCH_DELAY_MS);
+            return;
+        }
+
+        int next;
+        if (cursor == null || cursor < 0) {
+            int offlineStart = store.offlineStart();
+            next = offlineStart >= 0 ? offlineStart / MEMBER_BLOCK_SIZE : 0;
+            memberNextBlock.put(guild, next);
+        } else {
+            next = cursor;
+        }
+        int offlineStart = store.offlineStart();
+        if (offlineStart >= 0) {
+            int offlineBlock = offlineStart / MEMBER_BLOCK_SIZE;
+            if (next < offlineBlock) {
+                next = offlineBlock;
+                memberNextBlock.put(guild, next);
+            }
+        }
+
+        int totalBlocks = (total + MEMBER_BLOCK_SIZE - 1) / MEMBER_BLOCK_SIZE;
+        while (next < totalBlocks) {
+            int blockStart = next * MEMBER_BLOCK_SIZE;
+            int blockEnd = Math.min(total, blockStart + MEMBER_BLOCK_SIZE);
+            boolean missing = false;
+            for (int i = blockStart; i < blockEnd; i++) {
+                if (store.get(i) == null) {
+                    missing = true;
+                    break;
+                }
+            }
+            if (missing) break;
+            next++;
+        }
+        memberNextBlock.put(guild, next);
+        if (next >= totalBlocks) return;
+        int requested = memberRequestedBlocks.getOrDefault(guild, 0);
+        int remaining = MEMBER_PREFETCH_MAX_BLOCKS - requested;
+        if (remaining <= 0) return;
+        int batch = Math.min(MEMBER_PREFETCH_BATCH, remaining);
+        int end = Math.min(totalBlocks - 1, next + batch - 1);
+        if (host.activity.gateway.requestMemberBlockRanges(
+                guild, host.channelId, next, end)) {
+            memberNextBlock.put(guild, end + 1);
+            memberRequestedBlocks.put(guild, requested + (end - next + 1));
+            scheduleMemberPrefetch(MEMBER_PREFETCH_DELAY_MS);
+        } else {
+            scheduleMemberPrefetch(1000L);
+        }
+    }
+
+    private void scheduleMemberPrefetch(long delayMs) {
+        ui.removeCallbacks(memberPrefetchRunnable);
+        ui.postDelayed(memberPrefetchRunnable, delayMs);
     }
 
     private void render() {
