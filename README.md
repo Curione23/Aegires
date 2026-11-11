@@ -7,6 +7,7 @@ A lightweight, unofficial Discord client for Android, written in Java. Aegires t
 ## Features
 
 - Guild rail with categories, text channels, listed voice/forum channels, and direct messages
+- In-app Discord web login that captures a user token for local use
 - Live message feed with history loading, gateway updates, typing indicators, and message grouping
 - Discord-style markdown: bold, italics, underline, strikethrough, spoilers, inline code, code blocks, quotes, headings, and lists
 - Custom emoji, user/role/channel mentions, timestamps, and slash-command rendering
@@ -56,9 +57,15 @@ adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ## Usage
 
 1. Launch Aegires.
-2. Paste a Discord token into the login field and tap **Log in**.
+2. Tap **Log in with Discord** to sign in through Discord's web page, or paste a token into the login field and tap **Log in**.
 3. Choose a server or open DMs from the left rail.
 4. Tap a channel to open it. Long-press a message for reply, copy, edit, and delete actions.
+
+### Web login
+
+**Log in with Discord** opens Discord's web login inside the app. After you sign in, Aegires captures the user token from the web client's authenticated requests and stores it in app-private `SharedPreferences`. This is token capture, not Discord OAuth2; the captured value is the same kind of user token you would paste manually. If the web login does not work on your device, use the token field instead.
+
+Logging out clears both the saved token and the in-app web session.
 
 ### End-to-end encryption
 
@@ -90,6 +97,7 @@ The UI is built programmatically in Java. There are no XML layout resources. Sha
 ## How It Works
 
 - **REST:** `ApiClient` handles authentication, guilds, channels, messages, members, profiles, mentions, forums, and uploads using OkHttp.
+- **Web login:** `WebLoginScreen` loads Discord's web client in a WebView and captures the user token from authenticated API requests or web storage.
 - **Gateway:** `GatewayClient` maintains a compressed WebSocket connection with heartbeats, resume support, guild/channel subscriptions, and automatic reconnect with backoff.
 - **Caching:** messages, channel state, media, and member lists are cached in memory and on disk to keep screen changes fast.
 - **Rendering:** `DiscordMarkdown` converts Discord's markdown into Android spans; `DiscordMessageRenderer` resolves mentions, emoji, timestamps, and links.
@@ -97,8 +105,8 @@ The UI is built programmatically in Java. There are no XML layout resources. Sha
 
 ## Notes and Limitations
 
-- A Discord token is required; there is no OAuth login flow.
-- The token is stored in app-private `SharedPreferences`. Use a dedicated token and log out when finished.
+- A Discord user token is required. You can paste one or use the in-app web login, which captures the token from Discord's web client; this is not Discord OAuth2.
+- The token is stored in app-private `SharedPreferences`. Use a dedicated token and log out when finished. Logging out also clears the in-app web session.
 - Mention notifications are shown in-app; the app does not register for system push notifications.
 - Forum, member-list, and mention features depend on the permissions and capabilities of the logged-in account.
 - Voice channels are listed in the channel tree, but voice connections are not implemented.

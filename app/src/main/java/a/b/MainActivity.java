@@ -296,6 +296,12 @@ public class MainActivity extends Activity {
         e2eeKey = null;
         e2eeEnabled = false;
         TokenStore.clear(this);
+        try {
+            android.webkit.WebStorage.getInstance().deleteAllData();
+            android.webkit.CookieManager cookies = android.webkit.CookieManager.getInstance();
+            cookies.removeAllCookies(value -> cookies.flush());
+        } catch (Exception ignored) {
+        }
 
         channelCache.clear();
         guildCache.clear();

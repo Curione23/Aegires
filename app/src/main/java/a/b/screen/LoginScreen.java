@@ -10,6 +10,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import a.b.MainActivity;
@@ -27,20 +28,28 @@ public class LoginScreen implements Screen {
         FrameLayout root = new FrameLayout(activity);
         root.setBackgroundColor(Ui.BG);
 
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
+        root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+
         LinearLayout form = new LinearLayout(activity);
         form.setOrientation(LinearLayout.VERTICAL);
-        form.setGravity(Gravity.CENTER_HORIZONTAL);
-        FrameLayout.LayoutParams formLp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+        form.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams formLp = new FrameLayout.LayoutParams(-1, -2);
         formLp.leftMargin = dp(24);
         formLp.rightMargin = dp(24);
-        form.setLayoutParams(formLp);
 
         TextView header = Ui.text(activity, "Aegires", Ui.TEXT_HEADER, 28);
         header.setTypeface(null, Typeface.BOLD);
         header.setGravity(Gravity.CENTER);
         form.addView(header);
 
-        TextView sub = Ui.text(activity, "Paste your token to continue", Ui.MUTED, 14);
+        TextView sub =
+                Ui.text(
+                        activity,
+                        "Paste your token, or use Discord's web login",
+                        Ui.MUTED,
+                        14);
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, dp(6), 0, dp(28));
         form.addView(sub);
@@ -66,6 +75,29 @@ public class LoginScreen implements Screen {
         final TextView connect = Ui.primaryButton(activity, "Log in");
         form.addView(connect, new LinearLayout.LayoutParams(-1, dp(48)));
 
+        TextView or = Ui.text(activity, "or", Ui.MUTED, 12);
+        or.setGravity(Gravity.CENTER);
+        or.setPadding(0, dp(14), 0, dp(14));
+        form.addView(or);
+
+        TextView discordLogin = Ui.text(activity, "Log in with Discord", Ui.TEXT_HEADER, 15);
+        discordLogin.setTypeface(null, Typeface.BOLD);
+        discordLogin.setGravity(Gravity.CENTER);
+        discordLogin.setClickable(true);
+        discordLogin.setBackground(Ui.ripple(Ui.rounded(Ui.BG_INPUT, dp(8)), dp(8)));
+        form.addView(discordLogin, new LinearLayout.LayoutParams(-1, dp(48)));
+        discordLogin.setOnClickListener(v -> activity.navigate(new WebLoginScreen()));
+
+        TextView webNote =
+                Ui.text(
+                        activity,
+                        "Opens Discord's web login. The token stays on this device.",
+                        Ui.MUTED,
+                        12);
+        webNote.setGravity(Gravity.CENTER);
+        webNote.setPadding(dp(8), dp(10), dp(8), 0);
+        form.addView(webNote);
+
         final Runnable submit =
                 () -> {
                     if (activity == null) return;
@@ -90,7 +122,7 @@ public class LoginScreen implements Screen {
                     }
                     return false;
                 });
-        root.addView(form);
+        scroll.addView(form, formLp);
         return view = root;
     }
 
