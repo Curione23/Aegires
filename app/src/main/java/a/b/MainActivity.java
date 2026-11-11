@@ -315,7 +315,7 @@ public class MainActivity extends Activity {
 
         MemberListStore store = memberList;
         if (store != null && guildId.equals(store.guildId())) {
-            for (int i = 0; i < store.total(); i++) {
+            for (int i = 0; i < store.loadedCount(); i++) {
                 MemberListStore.Entry e = store.get(i);
                 if (e != null && !e.group && self.equals(e.userId)) {
                     List<String> roles = new ArrayList<>(e.roles);

@@ -75,6 +75,11 @@ public final class MemberListStore {
         return listSize > 0 ? listSize : items.size();
     }
 
+    /** Number of member/group entries currently loaded into the window, not the whole guild. */
+    public int loadedCount() {
+        return items.size();
+    }
+
     public void clear() {
         items.clear();
         guildId = listId = null;

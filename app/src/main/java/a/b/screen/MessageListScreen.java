@@ -136,7 +136,11 @@ public class MessageListScreen implements Screen {
                     androidx.core.graphics.Insets ime =
                             windowInsets.getInsets(
                                     androidx.core.view.WindowInsetsCompat.Type.ime());
-                    if (ime.bottom > 0 && adapter != null && adapter.getItemCount() > 0) {
+                    if (ime.bottom > 0
+                            && messageList != null
+                            && adapter != null
+                            && adapter.getItemCount() > 0
+                            && atBottom()) {
                         messageList.postDelayed(this::scrollToBottom, 100);
                     }
                     return windowInsets;
@@ -206,8 +210,17 @@ public class MessageListScreen implements Screen {
         messageList.addOnScrollListener(
                 new RecyclerView.OnScrollListener() {
                     @Override
+                    public void onScrollStateChanged(RecyclerView rv, int newState) {
+                        // Only hide for a deliberate finger drag. Keyboard resizes and programmatic
+                        // scrolls must not dismiss the mention popup.
+                        if (newState == RecyclerView.SCROLL_STATE_DRAGGING
+                                && mentionAutocomplete != null) {
+                            mentionAutocomplete.hide();
+                        }
+                    }
+
+                    @Override
                     public void onScrolled(RecyclerView rv, int dx, int dy) {
-                        if (mentionAutocomplete != null) mentionAutocomplete.hide();
                         if (layoutManager.findFirstVisibleItemPosition() <= 1)
                             feed.loadOlderMessages();
                     }

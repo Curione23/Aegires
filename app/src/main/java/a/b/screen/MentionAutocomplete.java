@@ -48,13 +48,17 @@ final class MentionAutocomplete {
     private static final int MAX_RESULTS = 8;
     private static final int MAX_VISIBLE_ROWS = 7;
     private static final int ROW_HEIGHT_DP = 48;
-    private static final long REMOTE_DELAY_MS = 220;
+    private static final int REMOTE_LIMIT = 100;
+    private static final long REMOTE_DELAY_MS = 180;
+    private static final long REMOTE_CACHE_TTL_MS = 5 * 60_000L;
+    private static final long EMPTY_CACHE_TTL_MS = 15_000L;
 
     private static final class Suggestion {
         final int kind;
         final String id, name;
         String username, avatar, search;
-        int color, position;
+        int color, position, remoteRank;
+        boolean fromRemote;
 
         Suggestion(int kind, String id, String name) {
             this.kind = kind;
@@ -67,6 +71,7 @@ final class MentionAutocomplete {
     private final MessageListScreen host;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Map<String, List<Suggestion>> remoteCache = new HashMap<>();
+    private final Map<String, Long> remoteFetchedAt = new HashMap<>();
     private final Set<String> pendingSearches = new HashSet<>();
     private final Runnable searchRunnable = this::runRemoteSearch;
     private final Runnable blurHide =
@@ -82,6 +87,7 @@ final class MentionAutocomplete {
     private String query = "";
     private List<Suggestion> remote = new ArrayList<>();
     private boolean updating;
+    private boolean active;
 
     MentionAutocomplete(MessageListScreen host) {
         this.host = host;
@@ -142,13 +148,16 @@ final class MentionAutocomplete {
         panel = null;
         rows = null;
         remoteCache.clear();
+        remoteFetchedAt.clear();
         pendingSearches.clear();
+        active = false;
     }
 
     void hide() {
         ui.removeCallbacks(searchRunnable);
         ui.removeCallbacks(blurHide);
         if (panel != null) panel.setVisibility(View.GONE);
+        active = false;
         tokenStart = -1;
     }
 
@@ -197,10 +206,14 @@ final class MentionAutocomplete {
             hide();
             return;
         }
+        // Leading/trailing spaces are common after typing "@", and repeated spaces should not
+        // prevent a member search from matching.
+        q = q.trim().replaceAll("\\s+", " ");
 
         sigil = found;
         tokenStart = sig;
         query = q;
+        active = true;
 
         String key = currentKey();
         List<Suggestion> cached = remoteCache.get(key);
@@ -215,19 +228,33 @@ final class MentionAutocomplete {
 
     private void scheduleRemote(String key) {
         ui.removeCallbacks(searchRunnable);
-        if (sigil != '@'
+        if (!active
+                || sigil != '@'
                 || host.guildId == null
                 || query.isEmpty()
                 || host.activity == null
                 || host.activity.apiClient == null
                 || host.activity.apiClient.isBotAccount())
             return;
-        if (remoteCache.containsKey(key) || pendingSearches.contains(key)) return;
+        if (pendingSearches.contains(key) || isRemoteFresh(key)) return;
         ui.postDelayed(searchRunnable, REMOTE_DELAY_MS);
     }
 
+    private boolean isRemoteFresh(String key) {
+        Long fetchedAt = remoteFetchedAt.get(key);
+        if (fetchedAt == null) return false;
+        List<Suggestion> cached = remoteCache.get(key);
+        long ttl =
+                cached == null || cached.isEmpty() ? EMPTY_CACHE_TTL_MS : REMOTE_CACHE_TTL_MS;
+        if (System.currentTimeMillis() - fetchedAt < ttl) return true;
+        remoteCache.remove(key);
+        remoteFetchedAt.remove(key);
+        return false;
+    }
+
     private void runRemoteSearch() {
-        if (input == null
+        if (!active
+                || input == null
                 || sigil != '@'
                 || host.guildId == null
                 || query.isEmpty()
@@ -241,7 +268,7 @@ final class MentionAutocomplete {
         host.activity.apiClient.searchGuildMembers(
                 host.guildId,
                 q,
-                25,
+                REMOTE_LIMIT,
                 new ApiClient.Callback<List<JSONObject>>() {
                     @Override
                     public void onSuccess(List<JSONObject> result) {
@@ -250,12 +277,20 @@ final class MentionAutocomplete {
                         if (result != null) {
                             for (JSONObject member : result) {
                                 Suggestion s = memberSuggestion(member);
-                                if (s != null) parsed.add(s);
+                                if (s == null) continue;
+                                s.remoteRank = parsed.size();
+                                parsed.add(s);
                             }
                         }
                         remoteCache.put(key, parsed);
-                        if (remoteCache.size() > 120) remoteCache.clear();
-                        if (key.equals(currentKey())) {
+                        remoteFetchedAt.put(key, System.currentTimeMillis());
+                        if (remoteCache.size() > 200) {
+                            remoteCache.clear();
+                            remoteFetchedAt.clear();
+                            remoteFetchedAt.put(key, System.currentTimeMillis());
+                            remoteCache.put(key, parsed);
+                        }
+                        if (active && key.equals(currentKey())) {
                             remote = parsed;
                             render();
                         }
@@ -264,6 +299,8 @@ final class MentionAutocomplete {
                     @Override
                     public void onError(String message) {
                         pendingSearches.remove(key);
+                        remoteCache.remove(key);
+                        remoteFetchedAt.remove(key);
                     }
                 });
     }
@@ -310,9 +347,21 @@ final class MentionAutocomplete {
 
         LinkedHashMap<String, Suggestion> users = new LinkedHashMap<>();
         collectLocalUsers(users);
-        for (Suggestion s : remote) users.putIfAbsent(s.id, s);
+        for (Suggestion s : remote) {
+            Suggestion existing = users.get(s.id);
+            if (existing == null) {
+                users.put(s.id, s);
+                continue;
+            }
+            existing.fromRemote = true;
+            existing.remoteRank = s.remoteRank;
+            if (!Ui.isReal(existing.avatar) && Ui.isReal(s.avatar)) existing.avatar = s.avatar;
+            if (!Ui.isReal(existing.username) && Ui.isReal(s.username)) existing.username = s.username;
+        }
         List<Suggestion> userList = new ArrayList<>(users.values());
-        userList.removeIf(s -> !matches(s, q));
+        // Remote results already came from Discord's member search, whose matching rules can be
+        // broader than our local "contains" check. Do not throw those matches away.
+        userList.removeIf(s -> !s.fromRemote && !matches(s, q));
         Collections.sort(userList, suggestionOrder(q));
 
         List<Suggestion> roles = new ArrayList<>();
@@ -345,7 +394,7 @@ final class MentionAutocomplete {
         if (host.activity == null) return;
         MemberListStore store = host.activity.memberList;
         if (host.guildId != null && store != null && host.guildId.equals(store.guildId())) {
-            for (int i = 0; i < store.total(); i++) {
+            for (int i = 0; i < store.loadedCount(); i++) {
                 MemberListStore.Entry e = store.get(i);
                 if (e == null || e.group) continue;
                 addUser(out, e.userId, e.displayName(), e.username, e.avatar);
@@ -420,6 +469,7 @@ final class MentionAutocomplete {
         s.username = username;
         s.avatar = u.isNull("avatar") ? null : u.optString("avatar", null);
         s.search = name + (Ui.isReal(username) ? " " + username : "");
+        s.fromRemote = true;
         return s;
     }
 
@@ -438,6 +488,10 @@ final class MentionAutocomplete {
         return (a, b) -> {
             int score = Integer.compare(matchScore(a, q), matchScore(b, q));
             if (score != 0) return score;
+            if (a.fromRemote && b.fromRemote) {
+                int rank = Integer.compare(a.remoteRank, b.remoteRank);
+                if (rank != 0) return rank;
+            }
             return a.name.compareToIgnoreCase(b.name);
         };
     }
@@ -454,9 +508,11 @@ final class MentionAutocomplete {
     private static int matchScore(Suggestion s, String q) {
         if (q.isEmpty()) return 0;
         String name = s.name.toLowerCase(Locale.ROOT);
+        if (name.equals(q)) return -1;
         if (name.startsWith(q)) return 0;
         if (name.contains(q)) return 1;
         String search = s.search == null ? "" : s.search.toLowerCase(Locale.ROOT);
+        if (search.equals(q)) return -1;
         return search.contains(q) ? 2 : 3;
     }
 
