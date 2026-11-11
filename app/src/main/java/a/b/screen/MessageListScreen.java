@@ -355,7 +355,7 @@ public class MessageListScreen implements Screen {
         if (i >= 0) messageList.scrollToPosition(loadingAdapter.getItemCount() + i);
     }
 
-    void onSelfRolesLoaded() {
+    public void onSelfRolesLoaded() {
         if (adapter != null) adapter.notifyDataSetChanged();
     }
 

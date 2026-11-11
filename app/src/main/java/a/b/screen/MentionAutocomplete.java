@@ -192,7 +192,7 @@ final class MentionAutocomplete {
             return;
         }
 
-        String q = text.substring(sig + 1, cursor);
+        String q = text.subSequence(sig + 1, cursor).toString();
         if (q.indexOf('<') >= 0 || q.indexOf('>') >= 0 || q.indexOf('\n') >= 0) {
             hide();
             return;
