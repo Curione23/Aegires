@@ -116,10 +116,7 @@ final class MentionAutocomplete {
     private final Runnable searchRunnable = this::runRemoteSearch;
     private final Runnable deepPageRunnable = this::maybeLoadDeepMembers;
     private final Runnable memberPrefetchRunnable = this::maybePrefetchMembers;
-    private final Runnable memberRenderRunnable =
-            () -> {
-                if (active) render();
-            };
+    private final Runnable memberRenderRunnable = this::renderMemberSuggestions;
     private final MemberListStore.Listener memberListListener =
             new MemberListStore.Listener() {
                 @Override
@@ -489,6 +486,10 @@ final class MentionAutocomplete {
                         }
                     }
                 });
+    }
+
+    private void renderMemberSuggestions() {
+        if (active) render();
     }
 
     private void scheduleMemberRender() {
